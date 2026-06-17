@@ -510,7 +510,7 @@ function bindEvents() {
     if (!folderId) return;
     const dueInput = document.querySelector("#due-input");
     const dueValue = dueInput?.value || null;
-    const { task } = await api("/api/tasks", { method: "POST", body: JSON.stringify({ title: data.get("title"), folderId, flagId: state.activeFlagId, dueAt: dueValue || (state.view === "today" ? todayKey() : null), important: state.view === "important" }) });
+    const { task } = await api("/api/tasks", { method: "POST", body: JSON.stringify({ title: data.get("title"), folderId, flagId: state.activeFlagId, dueAt: dueValue, important: state.view === "important" }) });
     state.tasks.unshift(task); state.duePickerOpen = false; render();
   });
   document.querySelector("#folder-form")?.addEventListener("submit", async (event) => {
