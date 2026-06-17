@@ -1,0 +1,21 @@
+services:
+  pugotitasks:
+    build: .
+    container_name: pugotitasks
+    ports:
+      - "3010:3010"
+    environment:
+      PORT: "3010"
+      DB_FILE: "/app/data/pugotitasks.db"
+      PUGOTILAB_PROFILE_URL: "http://pugotilab-auth:8080/auth/api/profile"
+      PUGOTILAB_LOGIN_URL: "https://pugotilab.com/auth"
+    volumes:
+      - /DATA/AppData/pugotitasks/data:/app/data
+    networks:
+      - default
+      - pugotilab
+    restart: unless-stopped
+
+networks:
+  pugotilab:
+    external: true
