@@ -11,6 +11,7 @@ services:
       PUGOTILAB_LOGIN_URL: "https://pugotilab.com/auth"
     volumes:
       - /DATA/AppData/pugotitasks/data:/app/data
+      - /DATA/AppData/Pugotitasks/public:/app/public
     networks:
       - default
       - pugotilab

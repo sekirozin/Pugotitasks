@@ -8,5 +8,7 @@ export const config = {
   dbFile: process.env.DB_FILE ?? path.join(root, "data", "pugotitasks.db"),
   publicDir: process.env.PUBLIC_DIR ?? path.join(root, "public"),
   pugotilabProfileUrl: process.env.PUGOTILAB_PROFILE_URL ?? "http://pugotilab-auth:8080/auth/api/profile",
-  pugotilabLoginUrl: process.env.PUGOTILAB_LOGIN_URL ?? "https://pugotilab.com/auth"
+  pugotilabLoginUrl: process.env.PUGOTILAB_LOGIN_URL ?? "https://pugotilab.com/auth/login",
+  pugotilabOrigin: process.env.PUGOTILAB_ORIGIN ?? "http://pugotilab-auth:8080",
+  sessionSecret: process.env.SESSION_SECRET ?? "pugotitasks-dev-secret-change-in-production"
 };
