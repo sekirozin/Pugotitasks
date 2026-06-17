@@ -323,8 +323,10 @@ button { cursor: pointer; }
   background: var(--panel);
   padding: 12px 14px;
 }
-.task-card:not(.completed) { cursor: pointer; }
-.task-card:hover, .task-card.selected { border-color: #3448b8; background: var(--surface); }
+.task-card:not(.completed) { cursor: grab; }
+.task-card:not(.completed):active { cursor: grabbing; }
+.task-card:hover, .task-card.selected, .task-card.drag-over { border-color: #3448b8; background: var(--surface); }
+.task-card.dragging { opacity: .55; border-style: dashed; }
 .task-check {
   display: flex;
   width: 26px;

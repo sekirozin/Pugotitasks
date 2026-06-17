@@ -81,8 +81,11 @@ async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<voi
     return;
   }
   if (url.pathname === "/api/tasks/reorder" && req.method === "POST") {
-    const body = await readJson<{ sourceId?: string; targetId?: string }>(req);
-    sendJson(res, 200, { tasks: store.reorderTasks(profile.username, String(body.sourceId ?? ""), String(body.targetId ?? "")) });
+    const body = await readJson<{ sourceId?: string; targetId?: string; orderedIds?: string[] }>(req);
+    const tasks = Array.isArray(body.orderedIds)
+      ? store.reorderTaskList(profile.username, body.orderedIds.map(String))
+      : store.reorderTasks(profile.username, String(body.sourceId ?? ""), String(body.targetId ?? ""));
+    sendJson(res, 200, { tasks });
     return;
   }
   const taskId = routeId(url.pathname, "tasks");

@@ -24,7 +24,7 @@ const state = {
   vaultSettingsError: "",
   vaultSettingsMessage: "",
   theme: normalizeTheme(localStorage.getItem("pugotitasks-theme")),
-  reorderTaskId: null,
+  draggingTaskId: null,
   toast: ""
 };
 const folderIconList = ["book", "books", "bookmark-simple", "calendar", "chart-bar", "file-text", "gear", "house", "list", "lock", "lock-open", "play-circle", "playlist", "squares-four", "star", "user", "users", "fast-forward", "gauge", "seal-check", "arrows-left-right", "arrows-out-line-horizontal", "stack", "corners-out", "book-open", "tag", "rows", "pencil"];
@@ -93,7 +93,7 @@ function visibleTasks() {
     if (state.view === "important") return !task.completed && task.important;
     if (state.view === "completed") return task.completed;
     return true;
-  }).sort((a, b) => Number(a.completed) - Number(b.completed));
+  }).sort((a, b) => Number(a.completed) - Number(b.completed) || a.position - b.position);
 }
 function renderSidebar() {
   const nav = [
@@ -158,11 +158,11 @@ function renderTasks() {
     const flag = state.flags.find((item) => item.id === task.flagId);
     const due = task.dueAt ? new Date(`${task.dueAt.slice(0, 10)}T12:00:00`).toLocaleDateString("pt-BR") : "";
     return `
-      <article class="task-card ${task.completed ? "completed" : ""} ${state.reorderTaskId === task.id ? "selected" : ""}" data-task-card="${task.id}">
+      <article class="task-card ${task.completed ? "completed" : ""} ${state.draggingTaskId === task.id ? "dragging" : ""}" data-task-card="${task.id}" draggable="${task.completed ? "false" : "true"}">
         <button type="button" class="task-check ${task.completed ? "done" : ""}" data-complete="${task.id}" title="${task.completed ? "Reabrir" : "Concluir"}">
           ${task.completed ? '<svg viewBox="0 0 256 256" class="icon"><polyline points="216 72 88 200 40 152" fill="none" stroke="currentColor" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ""}
         </button>
-        <div class="task-body" title="${task.completed ? "" : "Clique para selecionar e trocar com outra tarefa"}">
+        <div class="task-body" title="${task.completed ? "" : "Segure e arraste para reordenar"}">
           <div class="task-title">${renderFormattedText(task.title)}</div>
           <div class="task-meta">
             ${folder ? `<span style="color:${escapeHtml(folder.color || "#64748b")}">${icon(safeFolderIcon(folder.icon))} ${escapeHtml(folder.name)}</span>` : ""}
@@ -323,14 +323,14 @@ async function reload() {
 async function patchTask(id, changes) {
   const { task } = await api(`/api/tasks/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(changes) });
   state.tasks = state.tasks.map((item) => item.id === id ? task : item);
-  if (task.completed && state.reorderTaskId === id) state.reorderTaskId = null;
+  if (task.completed && state.draggingTaskId === id) state.draggingTaskId = null;
   render();
 }
 
-async function reorderTasks(sourceId, targetId) {
-  const { tasks } = await api("/api/tasks/reorder", { method: "POST", body: JSON.stringify({ sourceId, targetId }) });
+async function reorderTasks(orderedIds) {
+  const { tasks } = await api("/api/tasks/reorder", { method: "POST", body: JSON.stringify({ orderedIds }) });
   state.tasks = tasks;
-  state.reorderTaskId = null;
+  state.draggingTaskId = null;
   render();
 }
 let vaultInactivityTimer = null;
@@ -584,15 +584,44 @@ function bindEvents() {
     const id = element.dataset.complete || element.dataset.toggleComplete; const task = state.tasks.find((item) => item.id === id);
     if (task) await patchTask(id, { completed: !task.completed });
   }));
-  document.querySelectorAll("[data-task-card]").forEach((element) => element.addEventListener("click", async (event) => {
-    if (event.target.closest("button")) return;
-    const id = element.dataset.taskCard;
-    const task = state.tasks.find((item) => item.id === id);
-    if (!task || task.completed) return;
-    if (!state.reorderTaskId) { state.reorderTaskId = id; render(); return; }
-    if (state.reorderTaskId === id) { state.reorderTaskId = null; render(); return; }
-    await reorderTasks(state.reorderTaskId, id);
-  }));
+  document.querySelectorAll("[data-task-card]").forEach((element) => {
+    element.addEventListener("dragstart", (event) => {
+      const id = element.dataset.taskCard;
+      const task = state.tasks.find((item) => item.id === id);
+      if (!task || task.completed || event.target.closest("button")) { event.preventDefault(); return; }
+      state.draggingTaskId = id;
+      element.classList.add("dragging");
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", id);
+    });
+    element.addEventListener("dragover", (event) => {
+      if (!state.draggingTaskId) return;
+      const target = state.tasks.find((item) => item.id === element.dataset.taskCard);
+      if (!target || target.completed || target.id === state.draggingTaskId) return;
+      event.preventDefault();
+      element.classList.add("drag-over");
+      event.dataTransfer.dropEffect = "move";
+    });
+    element.addEventListener("dragleave", () => element.classList.remove("drag-over"));
+    element.addEventListener("dragend", () => {
+      state.draggingTaskId = null;
+      document.querySelectorAll(".task-card.dragging, .task-card.drag-over").forEach((item) => item.classList.remove("dragging", "drag-over"));
+    });
+    element.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      element.classList.remove("drag-over");
+      const sourceId = state.draggingTaskId || event.dataTransfer.getData("text/plain");
+      const targetId = element.dataset.taskCard;
+      if (!sourceId || !targetId || sourceId === targetId) return;
+      const openIds = visibleTasks().filter((task) => !task.completed).map((task) => task.id);
+      const sourceIndex = openIds.indexOf(sourceId);
+      const targetIndex = openIds.indexOf(targetId);
+      if (sourceIndex === -1 || targetIndex === -1) return;
+      const [moved] = openIds.splice(sourceIndex, 1);
+      openIds.splice(targetIndex, 0, moved);
+      await reorderTasks(openIds);
+    });
+  });
   document.querySelectorAll("[data-important]").forEach((element) => element.addEventListener("click", async () => {
     const task = state.tasks.find((item) => item.id === element.dataset.important);
     if (task) await patchTask(task.id, { important: !task.important });

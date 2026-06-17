@@ -260,6 +260,24 @@ export class Store {
     })();
   }
 
+  reorderTaskList(userId: string, orderedIds: string[]): Task[] {
+    return this.db.transaction(() => {
+      const openRows = this.db.prepare(`
+        SELECT id FROM tasks WHERE userId = ? AND completed = 0
+        ORDER BY position, createdAt DESC
+      `).all(userId) as Array<{ id: string }>;
+      const openIds = openRows.map((row) => row.id);
+      const openSet = new Set(openIds);
+      const cleanIds = orderedIds.filter((id, index, list) => openSet.has(id) && list.indexOf(id) === index);
+      if (cleanIds.length < 2) throw new Error("Envie pelo menos duas tarefas em aberto.");
+      const finalIds = [...cleanIds, ...openIds.filter((id) => !cleanIds.includes(id))];
+      const updatePosition = this.db.prepare("UPDATE tasks SET position = ?, updatedAt = ? WHERE id = ? AND userId = ?");
+      const now = new Date().toISOString();
+      finalIds.forEach((id, index) => updatePosition.run(index, now, id, userId));
+      return this.listTasks(userId);
+    })();
+  }
+
   // ── Server Settings ──
   getServerSetting(key: string): string | null {
     const row = this.db.prepare("SELECT value FROM server_settings WHERE key = ?").get(key) as { value: string } | undefined;
