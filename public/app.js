@@ -1,5 +1,5 @@
 const app = document.querySelector("#app");
-const icon = (name, className = "icon") => `<svg class="${className}" aria-hidden="true"><use href="/phosphor-sprite.svg#ph-${name}"></use></svg>`;
+const icon = (name, className = "icon") => `<svg class="${className}" aria-hidden="true"><use href="/phosphor-sprite.svg?v=completed-opacity-20260625#ph-${name}"></use></svg>`;
 const state = {
   profile: null,
   folders: [],
@@ -25,9 +25,10 @@ const state = {
   vaultSettingsMessage: "",
   theme: normalizeTheme(localStorage.getItem("pugotitasks-theme")),
   draggingTaskId: null,
+  sidebarExpanded: false,
   toast: ""
 };
-const folderIconList = ["book", "books", "bookmark-simple", "calendar", "chart-bar", "file-text", "gear", "house", "list", "lock", "lock-open", "play-circle", "playlist", "squares-four", "star", "user", "users", "fast-forward", "gauge", "seal-check", "arrows-left-right", "arrows-out-line-horizontal", "stack", "corners-out", "book-open", "tag", "rows", "pencil"];
+const folderIconList = ["book", "books", "bookmark-simple", "calendar", "chart-bar", "file-text", "gear", "house", "list", "lock", "lock-open", "play-circle", "playlist", "squares-four", "star", "user", "users", "fast-forward", "gauge", "seal-check", "arrows-left-right", "arrows-out-line-horizontal", "stack", "corners-out", "book-open", "tag", "rows", "pencil", "game-controller", "bug", "barbell", "note"];
 const folderColors = ["#22c55e", "#ef4444", "#3b82f6", "#f59e0b", "#a855f7", "#ec4899", "#14b8a6", "#64748b"];
 const flagColors = folderColors;
 function normalizeTheme(value) {
@@ -71,6 +72,13 @@ function todayKey() {
   const date = new Date();
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
+function taskDateKey(task) {
+  return task.dueAt?.slice(0, 10) || "";
+}
+function isTaskOverdue(task) {
+  const due = taskDateKey(task);
+  return Boolean(!task.completed && due && due < todayKey());
+}
 function taskCount(predicate) {
   return state.tasks.filter(predicate).length;
 }
@@ -81,7 +89,7 @@ function currentTitle() {
   if (state.activeNoteFolderId) return state.noteFolders.find((nf) => nf.id === state.activeNoteFolderId)?.name || "Notas";
   if (state.activeFolderId) return state.folders.find((folder) => folder.id === state.activeFolderId)?.name || "Lista";
   if (state.activeFlagId) return state.flags.find((flag) => flag.id === state.activeFlagId)?.name || "Flag";
-  return { today: "Meu dia", important: "Importantes", all: "Todas as tarefas", completed: "Concluídas" }[state.view] || "Tarefas";
+  return { today: "Meu dia", overdue: "Atrasadas", important: "Importantes", all: "Todas as tarefas", completed: "Concluídas" }[state.view] || "Tarefas";
 }
 function visibleTasks() {
   const search = state.search.trim().toLowerCase();
@@ -89,15 +97,17 @@ function visibleTasks() {
     if (search && !`${task.title} ${task.notes}`.toLowerCase().includes(search)) return false;
     if (state.activeFolderId) return task.folderId === state.activeFolderId;
     if (state.activeFlagId) return task.flagId === state.activeFlagId;
-    if (state.view === "today") return !task.completed && task.dueAt?.slice(0, 10) === todayKey();
+    if (state.view === "today") return !task.completed && taskDateKey(task) === todayKey();
+    if (state.view === "overdue") return isTaskOverdue(task);
     if (state.view === "important") return !task.completed && task.important;
     if (state.view === "completed") return task.completed;
     return true;
-  }).sort((a, b) => Number(a.completed) - Number(b.completed) || a.position - b.position);
+  }).sort((a, b) => Number(a.completed) - Number(b.completed) || Number(isTaskOverdue(b)) - Number(isTaskOverdue(a)) || a.position - b.position);
 }
 function renderSidebar() {
   const nav = [
-    ["today", "sun", "Meu dia", taskCount((t) => !t.completed && t.dueAt?.slice(0, 10) === todayKey())],
+    ["today", "sun", "Meu dia", taskCount((t) => !t.completed && taskDateKey(t) === todayKey())],
+    ["overdue", "warning-circle", "Atrasadas", taskCount(isTaskOverdue)],
     ["important", "star", "Importantes", taskCount((t) => !t.completed && t.important)],
     ["all", "list", "Todas", taskCount((t) => !t.completed)],
     ["completed", "seal-check", "Concluídas", taskCount((t) => t.completed)]
@@ -107,7 +117,7 @@ function renderSidebar() {
       <nav class="nav-list">
         ${nav.map(([view, glyph, label, count]) => `
           <button type="button" class="nav-item ${!state.activeFolderId && !state.activeFlagId && state.view === view ? "active" : ""}" data-view="${view}">
-            ${icon(glyph)}<span>${label}</span><span class="count">${count}</span>
+            ${icon(glyph)}<span class="nav-label">${label}</span><span class="count">${count}</span>
           </button>
         `).join("")}
       </nav>
@@ -116,8 +126,8 @@ function renderSidebar() {
         ${state.folders.map((folder) => `
           <div class="folder-row">
             <button type="button" class="nav-item ${state.activeFolderId === folder.id ? "active" : ""}" data-folder="${folder.id}">
-              <span style="color:${escapeHtml(folder.color || "#64748b")}">${icon(safeFolderIcon(folder.icon))}</span>
-              <span>${escapeHtml(folder.name)}</span>
+              <span class="nav-glyph" style="color:${escapeHtml(folder.color || "#64748b")}">${icon(safeFolderIcon(folder.icon))}</span>
+              <span class="nav-label">${escapeHtml(folder.name)}</span>
               <span class="count">${taskCount((task) => !task.completed && task.folderId === folder.id)}</span>
             </button>
             <button type="button" class="icon-button folder-actions" data-folder-menu="${folder.id}" title="Editar pasta">${icon("dots-three-vertical")}</button>
@@ -140,8 +150,8 @@ function renderSidebar() {
         ${[...state.noteFolders].filter((nf) => !nf.locked || state.vaultVisible).sort((a, b) => (a.locked ? 1 : 0) - (b.locked ? 1 : 0)).map((nf) => `
           <div class="folder-row">
             <button type="button" class="nav-item ${state.activeNoteFolderId === nf.id ? "active" : ""}" data-note-folder="${nf.id}">
-              <span style="color:${escapeHtml(nf.color || "#f59e0b")}">${icon(nf.locked ? (state.vaultUnlocked ? "lock-open" : "lock") : safeFolderIcon(nf.icon))}</span>
-              <span>${escapeHtml(nf.name)}</span>
+              <span class="nav-glyph" style="color:${escapeHtml(nf.color || "#f59e0b")}">${icon(nf.locked ? (state.vaultUnlocked ? "lock-open" : "lock") : safeFolderIcon(nf.icon))}</span>
+              <span class="nav-label">${escapeHtml(nf.name)}</span>
               <span class="count">${state.notes.filter((n) => n.folderId === nf.id).length}</span>
             </button>
             <button type="button" class="icon-button folder-actions" data-note-folder-menu="${nf.id}" title="Editar pasta de notas">${icon("dots-three-vertical")}</button>
@@ -157,8 +167,10 @@ function renderTasks() {
     const folder = state.folders.find((item) => item.id === task.folderId);
     const flag = state.flags.find((item) => item.id === task.flagId);
     const due = task.dueAt ? new Date(`${task.dueAt.slice(0, 10)}T12:00:00`).toLocaleDateString("pt-BR") : "";
+    const overdue = isTaskOverdue(task);
+    const isMyDay = taskDateKey(task) === todayKey();
     return `
-      <article class="task-card ${task.completed ? "completed" : ""} ${state.draggingTaskId === task.id ? "dragging" : ""}" data-task-card="${task.id}" draggable="${task.completed ? "false" : "true"}">
+      <article class="task-card ${task.completed ? "completed" : ""} ${overdue ? "overdue" : ""} ${state.draggingTaskId === task.id ? "dragging" : ""}" data-task-card="${task.id}" draggable="${task.completed ? "false" : "true"}">
         <button type="button" class="task-check ${task.completed ? "done" : ""}" data-complete="${task.id}" title="${task.completed ? "Reabrir" : "Concluir"}">
           ${task.completed ? '<svg viewBox="0 0 256 256" class="icon"><polyline points="216 72 88 200 40 152" fill="none" stroke="currentColor" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ""}
         </button>
@@ -166,10 +178,11 @@ function renderTasks() {
           <div class="task-title">${renderFormattedText(task.title)}</div>
           <div class="task-meta">
             ${folder ? `<span style="color:${escapeHtml(folder.color || "#64748b")}">${icon(safeFolderIcon(folder.icon))} ${escapeHtml(folder.name)}</span>` : ""}
-            ${due ? `<span>${due}</span>` : ""}
+            ${due ? `<span class="${overdue ? "task-overdue-label" : ""}">${overdue ? `${icon("warning-circle")} Atrasada: ` : ""}${due}</span>` : ""}
             ${flag ? `<button type="button" class="task-flag" style="--flag:${flag.color}" data-task-flag="${flag.id}"><span class="flag-dot"></span>${escapeHtml(flag.name)}</button>` : ""}
           </div>
         </div>
+        <button type="button" class="icon-button my-day-button ${isMyDay ? "active" : ""}" data-my-day="${task.id}" title="${isMyDay ? "Remover de Meu dia" : "Adicionar a Meu dia"}">${icon(isMyDay ? "sun-fill" : "sun")}</button>
         <button type="button" class="icon-button" data-important="${task.id}" title="Importante">${icon(task.important ? "star-fill" : "star")}</button>
         <button type="button" class="icon-button card-delete" data-delete-task-card="${task.id}" title="Excluir tarefa">${icon("trash")}</button>
       </article>
@@ -276,9 +289,16 @@ function render() {
   if (!state.profile) return;
   app.className = "";
   app.innerHTML = `
-    <div class="app-shell">
+    <div class="app-shell ${state.sidebarExpanded ? "sidebar-expanded" : "sidebar-collapsed"}">
       <header class="topbar">
-        <div class="brand"><span class="brand-badge">${icon("seal-check")}</span><span>Pugotitasks</span></div>
+        <div class="topbar-brand-group">
+          <button type="button" id="sidebar-toggle" class="icon-button menu-toggle" title="${state.sidebarExpanded ? "Fechar menu" : "Abrir menu"}" aria-label="${state.sidebarExpanded ? "Fechar menu" : "Abrir menu"}">
+            ${icon("list")}
+          </button>
+          <button type="button" class="brand" data-view="today" title="Ir para Meu dia">
+            <span class="brand-badge">${icon("seal-check")}</span><span>Pugotitasks</span>
+          </button>
+        </div>
         <div class="topbar-actions">
           <label class="search-box">${icon("magnifying-glass")}<input id="search" placeholder="Pesquisar tarefas" value="${escapeHtml(state.search)}"></label>
           <button type="button" id="theme-toggle" class="icon-button" title="Alternar tema">${icon(state.theme === "dark" ? "sun" : "moon")}</button>
@@ -387,6 +407,10 @@ async function touchVault() {
 }
 
 function bindEvents() {
+  document.querySelector("#sidebar-toggle")?.addEventListener("click", () => {
+    state.sidebarExpanded = !state.sidebarExpanded;
+    render();
+  });
   document.querySelector("#search")?.addEventListener("input", (event) => {
     state.search = event.target.value;
     render();
@@ -406,7 +430,7 @@ function bindEvents() {
     if (folder?.locked && !state.vaultUnlocked) {
       state.modal = { type: "vault-unlock" }; render(); return;
     }
-    state.activeNoteFolderId = el.dataset.noteFolder; state.activeFolderId = null; state.activeFlagId = null; render();
+    state.activeNoteFolderId = el.dataset.noteFolder; state.activeFolderId = null; state.activeFlagId = null; if (window.innerWidth <= 720) state.sidebarExpanded = false; render();
   }));
   document.querySelector("#note-add-btn")?.addEventListener("click", () => {
     state.modal = { type: "note-write", folderId: state.activeNoteFolderId }; render();
@@ -480,13 +504,13 @@ function bindEvents() {
   document.querySelector("#due-picker-toggle")?.addEventListener("click", () => { state.duePickerOpen = !state.duePickerOpen; render(); });
   document.querySelector("#due-clear")?.addEventListener("click", () => { const inp = document.querySelector("#due-input"); if (inp) inp.value = ""; state.duePickerOpen = false; render(); });
   document.querySelectorAll("[data-view]").forEach((element) => element.addEventListener("click", () => {
-    state.view = element.dataset.view; state.activeFolderId = null; state.activeFlagId = null; state.activeNoteFolderId = null; render();
+    state.view = element.dataset.view; state.activeFolderId = null; state.activeFlagId = null; state.activeNoteFolderId = null; if (window.innerWidth <= 720) state.sidebarExpanded = false; render();
   }));
   document.querySelectorAll("[data-folder]").forEach((element) => element.addEventListener("click", () => {
-    state.activeFolderId = element.dataset.folder; state.activeFlagId = null; state.activeNoteFolderId = null; render();
+    state.activeFolderId = element.dataset.folder; state.activeFlagId = null; state.activeNoteFolderId = null; if (window.innerWidth <= 720) state.sidebarExpanded = false; render();
   }));
   document.querySelectorAll("[data-flag]").forEach((element) => element.addEventListener("click", () => {
-    state.activeFlagId = element.dataset.flag; state.activeFolderId = null; state.activeNoteFolderId = null; render();
+    state.activeFlagId = element.dataset.flag; state.activeFolderId = null; state.activeNoteFolderId = null; if (window.innerWidth <= 720) state.sidebarExpanded = false; render();
   }));
   document.querySelectorAll("[data-note-folder-menu]").forEach((element) => element.addEventListener("click", () => {
     const nf = state.noteFolders.find((f) => f.id === element.dataset.noteFolderMenu);
@@ -625,6 +649,12 @@ function bindEvents() {
   document.querySelectorAll("[data-important]").forEach((element) => element.addEventListener("click", async () => {
     const task = state.tasks.find((item) => item.id === element.dataset.important);
     if (task) await patchTask(task.id, { important: !task.important });
+  }));
+  document.querySelectorAll("[data-my-day]").forEach((element) => element.addEventListener("click", async () => {
+    const task = state.tasks.find((item) => item.id === element.dataset.myDay);
+    if (!task) return;
+    const isMyDay = task.dueAt?.slice(0, 10) === todayKey();
+    await patchTask(task.id, { dueAt: isMyDay ? null : todayKey() });
   }));
   document.querySelector("[data-delete-task]")?.addEventListener("click", async (event) => {
     const id = event.currentTarget.dataset.deleteTask;
