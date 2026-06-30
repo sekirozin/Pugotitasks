@@ -29,6 +29,7 @@ export class Store {
         id TEXT PRIMARY KEY,
         userId TEXT NOT NULL,
         name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
         color TEXT NOT NULL,
         createdAt TEXT NOT NULL
       );
@@ -78,6 +79,18 @@ export class Store {
     if (!cols.some((c) => c.name === "color")) {
       this.db.exec("ALTER TABLE folders ADD COLUMN color TEXT NOT NULL DEFAULT '#64748b'");
     }
+    cols = this.db.prepare("PRAGMA table_info(flags)").all() as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === "description")) {
+      this.db.exec("ALTER TABLE flags ADD COLUMN description TEXT NOT NULL DEFAULT ''");
+    }
+    this.db.exec(`
+      UPDATE flags SET description = CASE lower(name)
+        WHEN 'financeiro' THEN 'Contas, pagamentos e organização financeira.'
+        WHEN 'homelab' THEN 'Servidor, rede e manutenção do laboratório.'
+        ELSE description
+      END
+      WHERE description = ''
+    `);
     cols = this.db.prepare("PRAGMA table_info(notes)").all() as Array<{ name: string }>;
     if (!cols.some((c) => c.name === "title")) {
       this.db.exec("ALTER TABLE notes ADD COLUMN title TEXT NOT NULL DEFAULT ''");
@@ -101,12 +114,12 @@ export class Store {
     const now = new Date().toISOString();
     if (count === 0) {
       const insertFolder = this.db.prepare("INSERT INTO folders (id, userId, name, icon, color, position, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)");
-      const insertFlag = this.db.prepare("INSERT INTO flags (id, userId, name, color, createdAt) VALUES (?, ?, ?, ?, ?)");
+      const insertFlag = this.db.prepare("INSERT INTO flags (id, userId, name, description, color, createdAt) VALUES (?, ?, ?, ?, ?, ?)");
       this.db.transaction(() => {
         insertFolder.run(crypto.randomUUID(), userId, "Pessoal", "user", "#22c55e", 0, now);
         insertFolder.run(crypto.randomUUID(), userId, "Trabalho", "file-text", "#3b82f6", 1, now);
-        insertFlag.run(crypto.randomUUID(), userId, "Financeiro", "#22c55e", now);
-        insertFlag.run(crypto.randomUUID(), userId, "Homelab", "#ef4444", now);
+        insertFlag.run(crypto.randomUUID(), userId, "Financeiro", "Contas, pagamentos e organização financeira.", "#22c55e", now);
+        insertFlag.run(crypto.randomUUID(), userId, "Homelab", "Servidor, rede e manutenção do laboratório.", "#ef4444", now);
       })();
       const nfCount = (this.db.prepare("SELECT COUNT(*) count FROM note_folders WHERE userId = ?").get(userId) as { count: number }).count;
       if (nfCount === 0) {
@@ -159,14 +172,26 @@ export class Store {
   listFlags(userId: string): Flag[] {
     return this.db.prepare("SELECT * FROM flags WHERE userId = ? ORDER BY name").all(userId) as Flag[];
   }
-  createFlag(userId: string, name: string, color: string): Flag {
+  createFlag(userId: string, name: string, description: string, color: string): Flag {
     const clean = name.trim().slice(0, 40);
     if (!clean) throw new Error("Informe o nome da flag.");
+    const cleanDescription = description.trim().slice(0, 240);
     const selectedColor = allowedColors.has(color) ? color : "#3b82f6";
-    const flag: Flag = { id: crypto.randomUUID(), userId, name: clean, color: selectedColor, createdAt: new Date().toISOString() };
-    this.db.prepare("INSERT INTO flags (id, userId, name, color, createdAt) VALUES (?, ?, ?, ?, ?)")
-      .run(flag.id, userId, flag.name, flag.color, flag.createdAt);
+    const flag: Flag = { id: crypto.randomUUID(), userId, name: clean, description: cleanDescription, color: selectedColor, createdAt: new Date().toISOString() };
+    this.db.prepare("INSERT INTO flags (id, userId, name, description, color, createdAt) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(flag.id, userId, flag.name, flag.description, flag.color, flag.createdAt);
     return flag;
+  }
+  updateFlag(userId: string, id: string, updates: { name?: string; description?: string; color?: string }): Flag | null {
+    const current = this.db.prepare("SELECT * FROM flags WHERE id = ? AND userId = ?").get(id, userId) as Flag | undefined;
+    if (!current) return null;
+    const name = updates.name === undefined ? current.name : updates.name.trim().slice(0, 40);
+    if (!name) throw new Error("Informe o nome da flag.");
+    const description = updates.description === undefined ? current.description : updates.description.trim().slice(0, 240);
+    const color = updates.color && allowedColors.has(updates.color) ? updates.color : current.color;
+    this.db.prepare("UPDATE flags SET name = ?, description = ?, color = ? WHERE id = ? AND userId = ?")
+      .run(name, description, color, id, userId);
+    return this.db.prepare("SELECT * FROM flags WHERE id = ? AND userId = ?").get(id, userId) as Flag | undefined ?? null;
   }
   deleteFlag(userId: string, id: string): boolean {
     return this.db.transaction(() => {

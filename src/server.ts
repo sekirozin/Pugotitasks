@@ -66,11 +66,17 @@ async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<voi
     return;
   }
   if (url.pathname === "/api/flags" && req.method === "POST") {
-    const body = await readJson<{ name?: string; color?: string }>(req);
-    sendJson(res, 201, { flag: store.createFlag(profile.username, body.name ?? "", body.color ?? "") });
+    const body = await readJson<{ name?: string; description?: string; color?: string }>(req);
+    sendJson(res, 201, { flag: store.createFlag(profile.username, body.name ?? "", body.description ?? "", body.color ?? "") });
     return;
   }
   const flagId = routeId(url.pathname, "flags");
+  if (flagId && req.method === "PATCH") {
+    const body = await readJson<{ name?: string; description?: string; color?: string }>(req);
+    const flag = store.updateFlag(profile.username, flagId, body);
+    sendJson(res, flag ? 200 : 404, flag ? { flag } : { error: "Flag não encontrada." });
+    return;
+  }
   if (flagId && req.method === "DELETE") {
     sendJson(res, store.deleteFlag(profile.username, flagId) ? 200 : 404, { deleted: true });
     return;

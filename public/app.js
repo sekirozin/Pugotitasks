@@ -1,5 +1,5 @@
 const app = document.querySelector("#app");
-const icon = (name, className = "icon") => `<svg class="${className}" aria-hidden="true"><use href="/phosphor-sprite.svg?v=completed-opacity-20260625#ph-${name}"></use></svg>`;
+const icon = (name, className = "icon") => `<svg class="${className}" aria-hidden="true"><use href="/phosphor-sprite.svg?v=flags-area-20260629#ph-${name}"></use></svg>`;
 const state = {
   profile: null,
   folders: [],
@@ -68,6 +68,10 @@ function avatar(profile, className = "avatar-button") {
     ? `<span class="${className}"><img src="${escapeHtml(profile.avatarUrl)}" alt=""></span>`
     : `<span class="${className}">${escapeHtml(name.charAt(0).toUpperCase() || "P")}</span>`;
 }
+function logout() {
+  const returnUrl = `${window.location.origin}/`;
+  window.location.assign(`https://pugotilab.com/auth/logout?return=${encodeURIComponent(returnUrl)}`);
+}
 function todayKey() {
   const date = new Date();
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -89,7 +93,7 @@ function currentTitle() {
   if (state.activeNoteFolderId) return state.noteFolders.find((nf) => nf.id === state.activeNoteFolderId)?.name || "Notas";
   if (state.activeFolderId) return state.folders.find((folder) => folder.id === state.activeFolderId)?.name || "Lista";
   if (state.activeFlagId) return state.flags.find((flag) => flag.id === state.activeFlagId)?.name || "Flag";
-  return { today: "Meu dia", overdue: "Atrasadas", important: "Importantes", all: "Todas as tarefas", completed: "Concluídas" }[state.view] || "Tarefas";
+  return { today: "Meu dia", overdue: "Atrasadas", important: "Importantes", all: "Todas as tarefas", completed: "Concluídas", flags: "Flags" }[state.view] || "Tarefas";
 }
 function visibleTasks() {
   const search = state.search.trim().toLowerCase();
@@ -114,6 +118,7 @@ function renderSidebar() {
   ];
   return `
     <aside class="sidebar">
+      <div class="sidebar-content">
       <nav class="nav-list">
         ${nav.map(([view, glyph, label, count]) => `
           <button type="button" class="nav-item ${!state.activeFolderId && !state.activeFlagId && state.view === view ? "active" : ""}" data-view="${view}">
@@ -134,17 +139,6 @@ function renderSidebar() {
           </div>
         `).join("")}
       </div>
-      <div class="sidebar-section"><span>Flags</span><button type="button" class="icon-button" data-modal="flag" title="Nova flag">${icon("plus")}</button></div>
-      <div class="flags-cloud">
-        ${state.flags.map((flag) => `
-          <div class="flag-row">
-            <button type="button" class="flag-chip" style="--flag:${flag.color}" data-flag="${flag.id}">
-              <span class="flag-dot"></span>${escapeHtml(flag.name)}
-            </button>
-            <button type="button" class="flag-remove" data-delete-flag="${flag.id}" title="Excluir flag">${icon("x")}</button>
-          </div>
-        `).join("")}
-      </div>
       <div class="sidebar-section"><span>Notas</span><button type="button" class="icon-button" data-modal="note-folder" title="Nova pasta de notas">${icon("plus")}</button></div>
       <div class="nav-list">
         ${[...state.noteFolders].filter((nf) => !nf.locked || state.vaultVisible).sort((a, b) => (a.locked ? 1 : 0) - (b.locked ? 1 : 0)).map((nf) => `
@@ -158,7 +152,43 @@ function renderSidebar() {
           </div>
         `).join("")}
       </div>
+      </div>
+      <div class="sidebar-footer">
+        <button type="button" class="nav-item ${state.view === "flags" && !state.activeFlagId ? "active" : ""}" data-view="flags" title="Flags">
+          ${icon("flag")}<span class="nav-label">Flags</span><span class="count">${state.flags.length}</span>
+        </button>
+      </div>
     </aside>
+  `;
+}
+function renderFlags() {
+  return `
+    <section class="flags-page">
+      <div class="flags-page-toolbar">
+        <p>Organize tarefas com identificadores coloridos e descrições.</p>
+        <button type="button" class="primary-button" data-modal="flag">${icon("plus")} Nova flag</button>
+      </div>
+      <div class="flags-grid">
+        ${state.flags.length ? state.flags.map((flag) => {
+          const count = taskCount((task) => task.flagId === flag.id);
+          return `
+            <article class="flag-card" style="--flag:${escapeHtml(flag.color)}">
+              <div class="flag-card-icon">${icon("flag")}</div>
+              <div class="flag-card-copy">
+                <h2>${escapeHtml(flag.name)}</h2>
+                <p>${escapeHtml(flag.description || "Sem descrição.")}</p>
+                <span>${count} tarefa(s)</span>
+              </div>
+              <div class="flag-card-actions">
+                <button type="button" class="secondary-button" data-open-flag="${flag.id}">Ver tarefas</button>
+                <button type="button" class="icon-button" data-edit-flag="${flag.id}" title="Editar flag" aria-label="Editar flag">${icon("pencil")}</button>
+                <button type="button" class="icon-button flag-card-delete" data-delete-flag="${flag.id}" title="Excluir flag">${icon("trash")}</button>
+              </div>
+            </article>
+          `;
+        }).join("") : '<div class="empty-state flags-empty">Nenhuma flag criada.</div>'}
+      </div>
+    </section>
   `;
 }
 function renderTasks() {
@@ -182,9 +212,11 @@ function renderTasks() {
             ${flag ? `<button type="button" class="task-flag" style="--flag:${flag.color}" data-task-flag="${flag.id}"><span class="flag-dot"></span>${escapeHtml(flag.name)}</button>` : ""}
           </div>
         </div>
-        <button type="button" class="icon-button my-day-button ${isMyDay ? "active" : ""}" data-my-day="${task.id}" title="${isMyDay ? "Remover de Meu dia" : "Adicionar a Meu dia"}">${icon(isMyDay ? "sun-fill" : "sun")}</button>
-        <button type="button" class="icon-button" data-important="${task.id}" title="Importante">${icon(task.important ? "star-fill" : "star")}</button>
-        <button type="button" class="icon-button card-delete" data-delete-task-card="${task.id}" title="Excluir tarefa">${icon("trash")}</button>
+        <div class="task-actions">
+          <button type="button" class="icon-button my-day-button ${isMyDay ? "active" : ""}" data-my-day="${task.id}" title="${isMyDay ? "Remover de Meu dia" : "Adicionar a Meu dia"}">${icon(isMyDay ? "sun-fill" : "sun")}</button>
+          <button type="button" class="icon-button" data-important="${task.id}" title="Importante">${icon(task.important ? "star-fill" : "star")}</button>
+          <button type="button" class="icon-button card-delete" data-delete-task-card="${task.id}" title="Excluir tarefa">${icon("trash")}</button>
+        </div>
       </article>
     `;
   }).join("") : `<div class="empty-state">${state.search ? "Nenhuma tarefa encontrada." : "Nenhuma tarefa nesta lista."}</div>`;
@@ -283,7 +315,13 @@ function renderModal() {
     if (!task) return "";
     return `<div class="modal-backdrop"><form class="modal" id="task-edit-form"><h2>Editar tarefa</h2><div class="field"><span>Título</span><input name="title" maxlength="180" value="${escapeHtml(task.title)}" required autofocus></div><div class="field"><span>Notas</span><textarea name="notes" maxlength="4000" rows="3">${escapeHtml(task.notes)}</textarea></div><div class="field"><span>Vencimento</span><input name="dueAt" type="datetime-local" value="${task.dueAt ? (task.dueAt.includes("T") ? task.dueAt.slice(0, 16) : task.dueAt.slice(0, 10) + "T00:00") : ""}"></div><div class="field"><span>Flag</span><div class="flag-selector"><input type="hidden" name="flagId" value="${task.flagId || ""}"><button type="button" class="flag-chip${!task.flagId ? " selected" : ""}" data-flag-select=""><span class="flag-dot"></span>Sem flag</button>${state.flags.map((flag) => `<button type="button" class="flag-chip${task.flagId === flag.id ? " selected" : ""}" data-flag-select="${flag.id}" style="--flag:${flag.color}"><span class="flag-dot"></span>${escapeHtml(flag.name)}</button>`).join("")}</div></div><div class="modal-actions"><button type="button" class="danger-button" data-delete-task="${task.id}">Excluir tarefa</button><button type="button" class="secondary-button" data-close-modal>Cancelar</button><button type="submit" class="primary-button">Salvar</button></div></form></div>`;
   }
-  return `<div class="modal-backdrop"><form class="modal" id="flag-form"><h2>Nova flag</h2><label class="field"><span>Nome</span><input name="name" maxlength="40" placeholder="Ex.: Financeiro" required autofocus></label><input type="hidden" name="color" value="${state.modal.color || flagColors[0]}"><div class="color-picker">${flagColors.map((color) => `<button type="button" class="color-choice ${state.modal.color === color || (!state.modal.color && color === flagColors[0]) ? "selected" : ""}" style="--color:${color}" data-color="${color}" title="${color}"></button>`).join("")}</div><div class="modal-actions"><button type="button" class="secondary-button" data-close-modal>Cancelar</button><button type="submit" class="primary-button">Criar flag</button></div></form></div>`;
+  if (state.modal.type === "flag-edit") {
+    const flag = state.flags.find((item) => item.id === state.modal.id);
+    if (!flag) return "";
+    const color = state.modal.color || flag.color;
+    return `<div class="modal-backdrop"><form class="modal" id="flag-edit-form"><h2>Editar flag</h2><label class="field"><span>Nome</span><input name="name" maxlength="40" value="${escapeHtml(flag.name)}" required autofocus></label><label class="field"><span>Descrição</span><textarea name="description" maxlength="240" rows="3" placeholder="Explique quando usar esta flag">${escapeHtml(flag.description || "")}</textarea></label><input type="hidden" name="color" value="${color}"><div class="field"><span>Cor</span><div class="color-picker">${flagColors.map((item) => `<button type="button" class="color-choice ${color === item ? "selected" : ""}" style="--color:${item}" data-color="${item}" title="${item}"></button>`).join("")}</div></div><div class="modal-actions"><button type="button" class="danger-button" data-delete-flag="${flag.id}">Excluir flag</button><button type="button" class="secondary-button" data-close-modal>Cancelar</button><button type="submit" class="primary-button">Salvar</button></div></form></div>`;
+  }
+  return `<div class="modal-backdrop"><form class="modal" id="flag-form"><h2>Nova flag</h2><label class="field"><span>Nome</span><input name="name" maxlength="40" placeholder="Ex.: Financeiro" required autofocus></label><label class="field"><span>Descrição</span><textarea name="description" maxlength="240" rows="3" placeholder="Ex.: Contas, pagamentos e planejamento mensal"></textarea></label><input type="hidden" name="color" value="${state.modal.color || flagColors[0]}"><div class="field"><span>Cor</span><div class="color-picker">${flagColors.map((color) => `<button type="button" class="color-choice ${state.modal.color === color || (!state.modal.color && color === flagColors[0]) ? "selected" : ""}" style="--color:${color}" data-color="${color}" title="${color}"></button>`).join("")}</div></div><div class="modal-actions"><button type="button" class="secondary-button" data-close-modal>Cancelar</button><button type="submit" class="primary-button">Criar flag</button></div></form></div>`;
 }
 function render() {
   if (!state.profile) return;
@@ -304,15 +342,15 @@ function render() {
           <button type="button" id="theme-toggle" class="icon-button" title="Alternar tema">${icon(state.theme === "dark" ? "sun" : "moon")}</button>
           <div class="profile-shell">
             <button type="button" data-profile-toggle title="${escapeHtml(profileName())}" style="all:unset;cursor:pointer">${avatar(state.profile)}</button>
-            ${state.profileOpen ? `<div class="profile-menu"><div class="profile-summary">${avatar(state.profile, "profile-avatar")}<div><strong>${escapeHtml(profileName())}</strong><span>@${escapeHtml(state.profile.username)}</span></div></div>${state.profile.biography ? `<p>${escapeHtml(state.profile.biography)}</p>` : ""}${state.profile.location ? `<p>${escapeHtml(state.profile.location)}</p>` : ""}${state.profile.role === "admin" ? `<form class="vault-settings-form" id="vault-settings-form"><label class="vault-settings-row"><span>Cofre: tempo sem atividade (min)</span><input name="vaultTimeoutMinutes" type="number" min="1" step="1" value="${escapeHtml(state.vaultSettingsDraft)}" required></label>${state.vaultSettingsError ? `<p class="error">${escapeHtml(state.vaultSettingsError)}</p>` : ""}${state.vaultSettingsMessage ? `<p class="scan-message">${escapeHtml(state.vaultSettingsMessage)}</p>` : ""}<button type="submit" class="button">Salvar</button></form>` : ""}<p>Perfil compartilhado Pugotilab</p></div>` : ""}
+            ${state.profileOpen ? `<div class="profile-menu"><div class="profile-summary">${avatar(state.profile, "profile-avatar")}<div><strong>${escapeHtml(profileName())}</strong><span>@${escapeHtml(state.profile.username)}</span></div></div>${state.profile.biography ? `<p>${escapeHtml(state.profile.biography)}</p>` : ""}${state.profile.location ? `<p>${escapeHtml(state.profile.location)}</p>` : ""}${state.profile.role === "admin" ? `<form class="vault-settings-form" id="vault-settings-form"><label class="vault-settings-row"><span>Cofre: tempo sem atividade (min)</span><input name="vaultTimeoutMinutes" type="number" min="1" step="1" value="${escapeHtml(state.vaultSettingsDraft)}" required></label>${state.vaultSettingsError ? `<p class="error">${escapeHtml(state.vaultSettingsError)}</p>` : ""}${state.vaultSettingsMessage ? `<p class="scan-message">${escapeHtml(state.vaultSettingsMessage)}</p>` : ""}<button type="submit" class="button">Salvar</button></form>` : ""}<p>Perfil compartilhado Pugotilab</p><button type="button" class="profile-logout" id="logout-button">${icon("arrow-square-out")}<span>Sair</span></button></div>` : ""}
           </div>
         </div>
       </header>
       <div class="workspace">
         ${renderSidebar()}
         <main class="main-content">
-          <div class="content-header"><div><h1>${escapeHtml(currentTitle())}</h1><p>${visibleTasks().length} tarefa(s)</p></div>${state.vaultUnlocked ? '<button type="button" class="icon-button vault-lock-button" id="lock-vault-button" title="Bloquear cofre">' + icon("lock") + '</button>' : ''}</div>
-          ${state.activeNoteFolderId ? `
+          <div class="content-header"><div><h1>${escapeHtml(currentTitle())}</h1><p>${state.view === "flags" ? `${state.flags.length} flag(s)` : `${visibleTasks().length} tarefa(s)`}</p></div>${state.vaultUnlocked ? '<button type="button" class="icon-button vault-lock-button" id="lock-vault-button" title="Bloquear cofre">' + icon("lock") + '</button>' : ''}</div>
+          ${state.view === "flags" ? renderFlags() : state.activeNoteFolderId ? `
           <button type="button" class="primary-button note-add-btn" id="note-add-btn">${icon("plus")} Adicionar nota</button>
           <section class="note-grid">${renderNotes()}</section>
           ` : `
@@ -368,6 +406,7 @@ async function lockVault() {
   state.activeNoteFolderId = null;
   state.activeFolderId = state.folders[0]?.id || null;
   state.activeFlagId = null;
+  state.view = "all";
   render();
 }
 
@@ -421,6 +460,7 @@ function bindEvents() {
     event.stopPropagation();
     event.stopImmediatePropagation();
     state.theme = state.theme === "light" ? "dark" : "light";
+    state.sidebarExpanded = false;
     localStorage.setItem("pugotitasks-theme", state.theme);
     applyTheme();
     render();
@@ -430,7 +470,7 @@ function bindEvents() {
     if (folder?.locked && !state.vaultUnlocked) {
       state.modal = { type: "vault-unlock" }; render(); return;
     }
-    state.activeNoteFolderId = el.dataset.noteFolder; state.activeFolderId = null; state.activeFlagId = null; if (window.innerWidth <= 720) state.sidebarExpanded = false; render();
+    state.activeNoteFolderId = el.dataset.noteFolder; state.activeFolderId = null; state.activeFlagId = null; state.view = "all"; if (window.innerWidth <= 720) state.sidebarExpanded = false; render();
   }));
   document.querySelector("#note-add-btn")?.addEventListener("click", () => {
     state.modal = { type: "note-write", folderId: state.activeNoteFolderId }; render();
@@ -501,16 +541,24 @@ function bindEvents() {
     }
   });
   document.querySelector("[data-profile-toggle]")?.addEventListener("click", () => { state.profileOpen = !state.profileOpen; render(); });
+  document.querySelector("#logout-button")?.addEventListener("click", logout);
   document.querySelector("#due-picker-toggle")?.addEventListener("click", () => { state.duePickerOpen = !state.duePickerOpen; render(); });
   document.querySelector("#due-clear")?.addEventListener("click", () => { const inp = document.querySelector("#due-input"); if (inp) inp.value = ""; state.duePickerOpen = false; render(); });
   document.querySelectorAll("[data-view]").forEach((element) => element.addEventListener("click", () => {
     state.view = element.dataset.view; state.activeFolderId = null; state.activeFlagId = null; state.activeNoteFolderId = null; if (window.innerWidth <= 720) state.sidebarExpanded = false; render();
   }));
   document.querySelectorAll("[data-folder]").forEach((element) => element.addEventListener("click", () => {
-    state.activeFolderId = element.dataset.folder; state.activeFlagId = null; state.activeNoteFolderId = null; if (window.innerWidth <= 720) state.sidebarExpanded = false; render();
+    state.activeFolderId = element.dataset.folder; state.activeFlagId = null; state.activeNoteFolderId = null; state.view = "all"; if (window.innerWidth <= 720) state.sidebarExpanded = false; render();
   }));
   document.querySelectorAll("[data-flag]").forEach((element) => element.addEventListener("click", () => {
-    state.activeFlagId = element.dataset.flag; state.activeFolderId = null; state.activeNoteFolderId = null; if (window.innerWidth <= 720) state.sidebarExpanded = false; render();
+    state.activeFlagId = element.dataset.flag; state.activeFolderId = null; state.activeNoteFolderId = null; state.view = "all"; if (window.innerWidth <= 720) state.sidebarExpanded = false; render();
+  }));
+  document.querySelectorAll("[data-open-flag]").forEach((element) => element.addEventListener("click", () => {
+    state.activeFlagId = element.dataset.openFlag; state.activeFolderId = null; state.activeNoteFolderId = null; state.view = "all"; render();
+  }));
+  document.querySelectorAll("[data-edit-flag]").forEach((element) => element.addEventListener("click", () => {
+    const flag = state.flags.find((item) => item.id === element.dataset.editFlag);
+    state.modal = { type: "flag-edit", id: element.dataset.editFlag, color: flag?.color || flagColors[0] }; render();
   }));
   document.querySelectorAll("[data-note-folder-menu]").forEach((element) => element.addEventListener("click", () => {
     const nf = state.noteFolders.find((f) => f.id === element.dataset.noteFolderMenu);
@@ -540,7 +588,7 @@ function bindEvents() {
   document.querySelector("#folder-form")?.addEventListener("submit", async (event) => {
     event.preventDefault(); const data = new FormData(event.currentTarget);
     const { folder } = await api("/api/folders", { method: "POST", body: JSON.stringify({ name: data.get("name"), icon: state.modal.icon, color: state.modal.color }) });
-    state.folders.push(folder); state.modal = null; state.activeFolderId = folder.id; render();
+    state.folders.push(folder); state.modal = null; state.activeFolderId = folder.id; state.view = "all"; render();
   });
   document.querySelector("#folder-edit-form")?.addEventListener("submit", async (event) => {
     event.preventDefault(); const data = new FormData(event.currentTarget); const id = state.modal.id;
@@ -549,8 +597,13 @@ function bindEvents() {
   });
   document.querySelector("#flag-form")?.addEventListener("submit", async (event) => {
     event.preventDefault(); const data = new FormData(event.currentTarget);
-    const { flag } = await api("/api/flags", { method: "POST", body: JSON.stringify({ name: data.get("name"), color: data.get("color") }) });
-    state.flags.push(flag); state.modal = null; state.activeFlagId = flag.id; state.activeFolderId = null; render();
+    const { flag } = await api("/api/flags", { method: "POST", body: JSON.stringify({ name: data.get("name"), description: data.get("description"), color: data.get("color") }) });
+    state.flags.push(flag); state.modal = null; state.activeFlagId = null; state.activeFolderId = null; state.view = "flags"; render();
+  });
+  document.querySelector("#flag-edit-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault(); const data = new FormData(event.currentTarget); const id = state.modal.id;
+    const { flag } = await api(`/api/flags/${id}`, { method: "PATCH", body: JSON.stringify({ name: data.get("name"), description: data.get("description"), color: data.get("color") }) });
+    state.flags = state.flags.map((item) => item.id === id ? flag : item); state.modal = null; render();
   });
   document.querySelector("[data-modal='note-folder']")?.addEventListener("click", () => {
     state.modal = { type: "note-folder", icon: "note", color: "#f59e0b" }; render();
@@ -578,6 +631,7 @@ function bindEvents() {
       state.notes = state.notes.concat(notesData.notes);
       state.modal = null;
       state.activeNoteFolderId = state.noteFolders.find((f) => f.locked)?.id || null;
+      state.view = "all";
       lastVaultTouchAt = Date.now();
       startVaultInactivityTimer();
       render();
@@ -589,7 +643,7 @@ function bindEvents() {
   document.querySelector("#note-folder-form")?.addEventListener("submit", async (event) => {
     event.preventDefault(); const data = new FormData(event.currentTarget);
     const { noteFolder } = await api("/api/note_folders", { method: "POST", body: JSON.stringify({ name: data.get("name"), icon: state.modal.icon, color: state.modal.color }) });
-    state.noteFolders.push(noteFolder); state.modal = null; state.activeNoteFolderId = noteFolder.id; render();
+    state.noteFolders.push(noteFolder); state.modal = null; state.activeNoteFolderId = noteFolder.id; state.view = "all"; render();
   });
   document.querySelector("#note-folder-edit-form")?.addEventListener("submit", async (event) => {
     event.preventDefault(); const data = new FormData(event.currentTarget); const id = state.modal.id;
@@ -700,6 +754,7 @@ function bindEvents() {
     await api(`/api/flags/${id}`, { method: "DELETE" });
     state.flags = state.flags.filter((f) => f.id !== id);
     if (state.activeFlagId === id) state.activeFlagId = null;
+    if (state.modal?.type === "flag-edit" && state.modal.id === id) state.modal = null;
     render();
   }));
   document.querySelectorAll("[data-delete-task-card]").forEach((element) => element.addEventListener("click", async (event) => {
@@ -715,6 +770,7 @@ function bindEvents() {
     state.activeFlagId = element.dataset.taskFlag;
     state.activeFolderId = null;
     state.activeNoteFolderId = null;
+    state.view = "all";
     render();
   }));
   document.querySelectorAll("[data-pin-note]").forEach((el) => el.addEventListener("click", async (event) => {
@@ -787,6 +843,22 @@ function bindEvents() {
     }
   });
 }
+
+function closeSidebarFromOutside(target) {
+  if (!state.sidebarExpanded) return;
+  const element = target instanceof Element ? target : null;
+  if (element?.closest('.sidebar, #sidebar-toggle')) return;
+
+  state.sidebarExpanded = false;
+  const shell = document.querySelector('.app-shell');
+  shell?.classList.remove('sidebar-expanded');
+  shell?.classList.add('sidebar-collapsed');
+  const button = document.querySelector('#sidebar-toggle');
+  button?.setAttribute('title', 'Abrir menu');
+  button?.setAttribute('aria-label', 'Abrir menu');
+}
+
+document.addEventListener('click', (event) => closeSidebarFromOutside(event.target));
 // vault activity tracking
 ["click", "keydown", "pointermove", "scroll"].forEach((eventName) => {
   document.addEventListener(eventName, registerVaultActivity, { passive: true });

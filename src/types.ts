@@ -22,6 +22,7 @@ export type Flag = {
   id: string;
   userId: string;
   name: string;
+  description: string;
   color: string;
   createdAt: string;
 };
