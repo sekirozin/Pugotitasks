@@ -1,7 +1,7 @@
 {
   "interactionModel": {
     "languageModel": {
-      "invocationName": "pugoti tarefas",
+      "invocationName": "pugoti lab",
       "intents": [
         {
           "name": "TodayTasksIntent",

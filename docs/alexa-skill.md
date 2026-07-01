@@ -37,12 +37,12 @@ Depois de salvar, copie todas as **Alexa Redirect URLs** mostradas pelo console 
 
 ## Comandos disponíveis
 
-- “Alexa, abra Pugoti tarefas.”
-- “Alexa, peça ao Pugoti tarefas minhas tarefas de hoje.”
-- “Alexa, peça ao Pugoti tarefas minhas tarefas atrasadas.”
-- “Alexa, peça ao Pugoti tarefas para adicionar comprar ração.”
-- “Alexa, peça ao Pugoti tarefas para adicionar para hoje pagar a conta.”
-- “Alexa, peça ao Pugoti tarefas para concluir comprar ração.”
+- “Alexa, abra Pugoti Lab.”
+- “Alexa, peça ao Pugoti Lab minhas tarefas de hoje.”
+- “Alexa, peça ao Pugoti Lab minhas tarefas atrasadas.”
+- “Alexa, peça ao Pugoti Lab para adicionar comprar ração.”
+- “Alexa, peça ao Pugoti Lab para adicionar para hoje pagar a conta.”
+- “Alexa, peça ao Pugoti Lab para concluir comprar ração.”
 
 As respostas leem no máximo cinco títulos por vez para não produzir falas excessivamente longas.
 
