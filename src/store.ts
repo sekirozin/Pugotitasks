@@ -4,7 +4,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { config } from "./config.js";
 import { getNextRecurrenceDueAt, normalizeRecurrenceInterval, normalizeRecurrenceType } from "./recurrence.js";
-import type { Flag, Folder, Note, NoteFolder, Task, VaultSettings } from "./types.js";
+import type { Flag, Folder, IntegrationIdentity, IntegrationScope, IntegrationToken, Note, NoteFolder, Task, VaultSettings } from "./types.js";
 const allowedColors = new Set([
   "#22c55e", "#ef4444", "#3b82f6", "#f59e0b",
   "#a855f7", "#ec4899", "#14b8a6", "#64748b"
@@ -77,6 +77,18 @@ export class Store {
       );
       CREATE INDEX IF NOT EXISTS idx_note_folders_user ON note_folders(userId, position);
       CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(userId, folderId, createdAt);
+      CREATE TABLE IF NOT EXISTS integration_tokens (
+        id TEXT PRIMARY KEY,
+        userId TEXT NOT NULL,
+        name TEXT NOT NULL,
+        tokenHash TEXT NOT NULL UNIQUE,
+        scopes TEXT NOT NULL,
+        createdAt TEXT NOT NULL,
+        lastUsedAt TEXT,
+        expiresAt TEXT,
+        revokedAt TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_integration_tokens_user ON integration_tokens(userId, createdAt);
     `);
     this.migrate();
   }
@@ -130,6 +142,18 @@ export class Store {
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS integration_tokens (
+        id TEXT PRIMARY KEY,
+        userId TEXT NOT NULL,
+        name TEXT NOT NULL,
+        tokenHash TEXT NOT NULL UNIQUE,
+        scopes TEXT NOT NULL,
+        createdAt TEXT NOT NULL,
+        lastUsedAt TEXT,
+        expiresAt TEXT,
+        revokedAt TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_integration_tokens_user ON integration_tokens(userId, createdAt);
     `);
   }
   ensureDefaults(userId: string): void {
@@ -384,6 +408,80 @@ export class Store {
       finalIds.forEach((id, index) => updatePosition.run(index, now, id, userId));
       return this.listTasks(userId);
     })();
+  }
+
+  createIntegrationToken(
+    userId: string,
+    input: { name?: string; scopes?: IntegrationScope[]; expiresInDays?: number | null }
+  ): { token: string; integration: IntegrationToken } {
+    const name = String(input.name ?? "Integração").trim().slice(0, 80);
+    if (!name) throw new Error("Informe o nome da integração.");
+    const supported = new Set<IntegrationScope>(["tasks:read", "tasks:write"]);
+    const requested: IntegrationScope[] = input.scopes?.length ? input.scopes : ["tasks:read", "tasks:write"];
+    const scopes = [...new Set(requested)].filter((scope): scope is IntegrationScope => supported.has(scope));
+    if (!scopes.length || scopes.length !== new Set(requested).size) throw new Error("Escopo de integração inválido.");
+
+    const expiresInDays = input.expiresInDays === undefined ? 365 : input.expiresInDays;
+    if (expiresInDays !== null && (!Number.isInteger(expiresInDays) || expiresInDays < 1 || expiresInDays > 3650)) {
+      throw new Error("A validade deve estar entre 1 e 3650 dias, ou ser nula.");
+    }
+    const now = new Date();
+    const token = `pgt_${crypto.randomBytes(32).toString("base64url")}`;
+    const integration: IntegrationToken = {
+      id: crypto.randomUUID(),
+      userId,
+      name,
+      scopes,
+      createdAt: now.toISOString(),
+      lastUsedAt: null,
+      expiresAt: expiresInDays === null ? null : new Date(now.getTime() + expiresInDays * 86_400_000).toISOString(),
+      revokedAt: null
+    };
+    this.db.prepare(`
+      INSERT INTO integration_tokens (id, userId, name, tokenHash, scopes, createdAt, lastUsedAt, expiresAt, revokedAt)
+      VALUES (?, ?, ?, ?, ?, ?, NULL, ?, NULL)
+    `).run(integration.id, userId, name, this.hashIntegrationToken(token), JSON.stringify(scopes), integration.createdAt, integration.expiresAt);
+    return { token, integration };
+  }
+
+  listIntegrationTokens(userId: string): IntegrationToken[] {
+    const rows = this.db.prepare(`
+      SELECT id, userId, name, scopes, createdAt, lastUsedAt, expiresAt, revokedAt
+      FROM integration_tokens WHERE userId = ? ORDER BY createdAt DESC
+    `).all(userId) as Array<Omit<IntegrationToken, "scopes"> & { scopes: string }>;
+    return rows.map((row) => ({ ...row, scopes: this.parseIntegrationScopes(row.scopes) }));
+  }
+
+  authenticateIntegrationToken(token: string): IntegrationIdentity | null {
+    if (!token.startsWith("pgt_") || token.length < 40 || token.length > 100) return null;
+    const row = this.db.prepare(`
+      SELECT id, userId, scopes, expiresAt, revokedAt FROM integration_tokens WHERE tokenHash = ?
+    `).get(this.hashIntegrationToken(token)) as {
+      id: string; userId: string; scopes: string; expiresAt: string | null; revokedAt: string | null;
+    } | undefined;
+    if (!row || row.revokedAt || (row.expiresAt && row.expiresAt <= new Date().toISOString())) return null;
+    this.db.prepare("UPDATE integration_tokens SET lastUsedAt = ? WHERE id = ?").run(new Date().toISOString(), row.id);
+    return { tokenId: row.id, userId: row.userId, scopes: this.parseIntegrationScopes(row.scopes) };
+  }
+
+  revokeIntegrationToken(userId: string, id: string): boolean {
+    return this.db.prepare(`
+      UPDATE integration_tokens SET revokedAt = ? WHERE id = ? AND userId = ? AND revokedAt IS NULL
+    `).run(new Date().toISOString(), id, userId).changes > 0;
+  }
+
+  private hashIntegrationToken(token: string): string {
+    return crypto.createHash("sha256").update(token).digest("hex");
+  }
+
+  private parseIntegrationScopes(raw: string): IntegrationScope[] {
+    try {
+      const scopes = JSON.parse(raw) as unknown;
+      if (!Array.isArray(scopes)) return [];
+      return scopes.filter((scope): scope is IntegrationScope => scope === "tasks:read" || scope === "tasks:write");
+    } catch {
+      return [];
+    }
   }
 
   // ── Server Settings ──

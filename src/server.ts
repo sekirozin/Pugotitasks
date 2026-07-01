@@ -4,8 +4,9 @@ import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { getCookie, getProfile } from "./auth.js";
 import { config } from "./config.js";
+import { handleIntegrationApi } from "./integration-api.js";
 import { store } from "./store.js";
-import type { Note, Task } from "./types.js";
+import type { IntegrationScope, Note, Task } from "./types.js";
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
   res.end(JSON.stringify(body));
@@ -28,6 +29,29 @@ async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<voi
   }
   store.ensureDefaults(profile.username);
   const url = new URL(req.url ?? "/", "http://localhost");
+  if (url.pathname === "/api/integrations/tokens" && req.method === "GET") {
+    sendJson(res, 200, { integrations: store.listIntegrationTokens(profile.username) });
+    return;
+  }
+  if (url.pathname === "/api/integrations/tokens" && req.method === "POST") {
+    const body = await readJson<{
+      name?: string;
+      scopes?: IntegrationScope[];
+      expiresInDays?: number | null;
+    }>(req);
+    const created = store.createIntegrationToken(profile.username, body);
+    sendJson(res, 201, {
+      ...created,
+      notice: "Guarde o token agora. Ele não será exibido novamente."
+    });
+    return;
+  }
+  const integrationTokenMatch = url.pathname.match(/^\/api\/integrations\/tokens\/([^/]+)$/);
+  if (integrationTokenMatch && req.method === "DELETE") {
+    const revoked = store.revokeIntegrationToken(profile.username, decodeURIComponent(integrationTokenMatch[1]));
+    sendJson(res, revoked ? 200 : 404, revoked ? { revoked: true } : { error: "Integração não encontrada ou já revogada." });
+    return;
+  }
   if (url.pathname === "/api/bootstrap" && req.method === "GET") {
     const noteFolders = store.listNoteFolders(profile.username);
     const lockedFolderIds = new Set(noteFolders.filter((f) => f.locked).map((f) => f.id));
@@ -263,7 +287,8 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { status: "ok", timestamp: new Date().toISOString() });
       return;
     }
-    if (req.url?.startsWith("/api/")) await handleApi(req, res);
+    if (req.url?.startsWith("/api/integrations/v1")) await handleIntegrationApi(req, res);
+    else if (req.url?.startsWith("/api/")) await handleApi(req, res);
     else await serveStatic(req, res);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro interno.";

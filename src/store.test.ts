@@ -28,3 +28,30 @@ test("concluir tarefa recorrente cria uma única próxima ocorrência", () => {
   assert.equal(tasks.find((item) => !item.completed)?.dueAt, "2099-07-02T10:00");
   assert.equal(tasks.find((item) => !item.completed)?.recurrenceParentId, original.id);
 });
+
+test("token de integração autentica apenas até ser revogado", () => {
+  const store = new Store();
+  const created = store.createIntegrationToken("test-user", {
+    name: "Alexa",
+    scopes: ["tasks:read", "tasks:write"],
+    expiresInDays: 30
+  });
+
+  assert.match(created.token, /^pgt_[A-Za-z0-9_-]{43}$/);
+  assert.deepEqual(store.authenticateIntegrationToken(created.token), {
+    tokenId: created.integration.id,
+    userId: "test-user",
+    scopes: ["tasks:read", "tasks:write"]
+  });
+  assert.equal(store.listIntegrationTokens("test-user")[0]?.lastUsedAt !== null, true);
+  assert.equal(store.revokeIntegrationToken("test-user", created.integration.id), true);
+  assert.equal(store.authenticateIntegrationToken(created.token), null);
+});
+
+test("token de integração não pode ser revogado por outro usuário", () => {
+  const store = new Store();
+  const created = store.createIntegrationToken("owner", { name: "Alexa", scopes: ["tasks:read"] });
+
+  assert.equal(store.revokeIntegrationToken("other-user", created.integration.id), false);
+  assert.equal(store.authenticateIntegrationToken(created.token)?.userId, "owner");
+});

@@ -50,6 +50,25 @@ export type Task = {
   recurrenceParentId: string | null;
 };
 
+export type IntegrationScope = "tasks:read" | "tasks:write";
+
+export type IntegrationToken = {
+  id: string;
+  userId: string;
+  name: string;
+  scopes: IntegrationScope[];
+  createdAt: string;
+  lastUsedAt: string | null;
+  expiresAt: string | null;
+  revokedAt: string | null;
+};
+
+export type IntegrationIdentity = {
+  tokenId: string;
+  userId: string;
+  scopes: IntegrationScope[];
+};
+
 
 export type NoteFolder = {
   id: string;

@@ -11,6 +11,7 @@ Gerenciador pessoal de tarefas integrado à conta Pugotilab.
 - Tema claro e escuro
 - Pugotiprofile compartilhado
 - Persistência SQLite isolada por usuário
+- API externa versionada para integrações
 
 ## Desenvolvimento
 
@@ -24,3 +25,8 @@ npm run dev
 ```bash
 docker compose up -d --build
 ```
+
+## API de integrações
+
+A API externa usa Bearer Tokens revogáveis e nunca expõe notas ou o cofre. Consulte
+[`docs/integration-api.md`](docs/integration-api.md) para criar um token e usar os endpoints.
