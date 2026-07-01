@@ -9,6 +9,7 @@ services:
       DB_FILE: "/app/data/pugotitasks.db"
       PUGOTILAB_PROFILE_URL: "http://pugotilab-auth:8080/auth/api/profile"
       PUGOTILAB_LOGIN_URL: "https://pugotilab.com/auth"
+      PUGOTILAB_AUTH_SECRET: "${PUGOTILAB_AUTH_SECRET:-}"
       TZ: "America/Maceio"
     volumes:
       - /DATA/AppData/pugotitasks/data:/app/data
@@ -16,6 +17,21 @@ services:
     networks:
       - default
       - pugotilab
+    restart: unless-stopped
+
+  pugotitasks-alexa:
+    build: ./alexa-skill
+    container_name: pugotitasks-alexa
+    ports:
+      - "3011:3011"
+    environment:
+      PORT: "3011"
+      PUGOTITASKS_API_URL: "http://pugotitasks:3010/api/integrations/v1"
+      ALEXA_SKILL_ID: "${ALEXA_SKILL_ID:-}"
+      TZ: "America/Maceio"
+    depends_on:
+      pugotitasks:
+        condition: service_healthy
     restart: unless-stopped
 
 networks:

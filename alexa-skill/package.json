@@ -1,0 +1,16 @@
+{
+  "name": "pugotitasks-alexa-skill",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "check": "node --check src/index.js && node --check src/api.js",
+    "test": "node --test src/**/*.test.js"
+  },
+  "dependencies": {
+    "ask-sdk-core": "^2.14.0",
+    "ask-sdk-express-adapter": "^2.14.0",
+    "express": "^5.2.1"
+  }
+}

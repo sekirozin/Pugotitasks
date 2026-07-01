@@ -7,6 +7,7 @@ import test, { after } from "node:test";
 
 const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "pugotitasks-api-"));
 process.env.DB_FILE = path.join(temporaryDirectory, "tasks.db");
+process.env.PUGOTILAB_AUTH_SECRET = "test-oauth-secret-that-is-long-enough-for-tests";
 
 const { store } = await import("./store.js");
 const { handleIntegrationApi } = await import("./integration-api.js");
@@ -79,4 +80,28 @@ test("API cria, consulta e conclui tarefa", async () => {
   const summaryResponse = await fetch(`${baseUrl}/summary?date=2099-07-01`, { headers });
   const summary = await summaryResponse.json() as { counts: { today: number; completed: number } };
   assert.deepEqual(summary.counts, { today: 0, overdue: 0, pending: 0, completed: 1 });
+});
+
+test("API aceita access token OAuth do PugotiProfile", async () => {
+  const jwt = (await import("jsonwebtoken")).default;
+  store.ensureDefaults("oauth-user");
+  const accessToken = jwt.sign({
+    sub: "oauth-user",
+    scope: "tasks:read tasks:write",
+    token_use: "access"
+  }, process.env.PUGOTILAB_AUTH_SECRET, {
+    algorithm: "HS256",
+    issuer: "pugotilab-auth",
+    audience: "pugotitasks-api",
+    expiresIn: "1h",
+    jwtid: "oauth-test"
+  });
+
+  const response = await fetch(`${baseUrl}/me`, {
+    headers: { authorization: `Bearer ${accessToken}` }
+  });
+  assert.equal(response.status, 200);
+  const body = await response.json() as { user: { username: string }; scopes: string[] };
+  assert.equal(body.user.username, "oauth-user");
+  assert.deepEqual(body.scopes, ["tasks:read", "tasks:write"]);
 });

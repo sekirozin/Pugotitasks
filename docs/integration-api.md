@@ -90,6 +90,6 @@ curl -X POST \
 
 ## Integração com Alexa
 
-Esta API é o recurso protegido que a skill consumirá. O fluxo de Account Linking da Alexa ainda
-deverá ser implementado no PugotiProfile com OAuth 2.0 Authorization Code; ele emitirá credenciais
-aceitas por esta camada ou trocará o código por um token de integração equivalente.
+Esta API aceita os tokens pessoais `pgt_...` e access tokens OAuth emitidos pelo PugotiProfile para
+a audiência `pugotitasks-api`. O Account Linking usa Authorization Code com PKCE `S256`, conforme
+descrito em [`alexa-skill.md`](alexa-skill.md).

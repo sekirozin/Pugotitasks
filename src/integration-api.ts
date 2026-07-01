@@ -1,4 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import jwt, { type JwtPayload } from "jsonwebtoken";
+import { config } from "./config.js";
 import { store } from "./store.js";
 import type { Flag, Folder, IntegrationIdentity, IntegrationScope, Task } from "./types.js";
 
@@ -34,7 +36,24 @@ async function readJson<T>(req: IncomingMessage): Promise<T> {
 function authenticate(req: IncomingMessage): IntegrationIdentity | null {
   const authorization = req.headers.authorization ?? "";
   const match = authorization.match(/^Bearer\s+([^\s]+)$/i);
-  return match ? store.authenticateIntegrationToken(match[1]) : null;
+  if (!match) return null;
+  const token = match[1];
+  if (token.startsWith("pgt_")) return store.authenticateIntegrationToken(token);
+  if (!config.pugotilabAuthSecret) return null;
+  try {
+    const payload = jwt.verify(token, config.pugotilabAuthSecret, {
+      algorithms: ["HS256"],
+      issuer: "pugotilab-auth",
+      audience: "pugotitasks-api"
+    }) as JwtPayload & { scope?: string | string[]; token_use?: string };
+    if (payload.token_use !== "access" || typeof payload.sub !== "string") return null;
+    const rawScopes = Array.isArray(payload.scope) ? payload.scope : String(payload.scope ?? "").split(/\s+/);
+    const scopes = rawScopes.filter((scope): scope is IntegrationScope => scope === "tasks:read" || scope === "tasks:write");
+    if (!scopes.length) return null;
+    return { tokenId: payload.jti ?? "oauth", userId: payload.sub.trim().toLowerCase(), scopes };
+  } catch {
+    return null;
+  }
 }
 
 function requireScope(identity: IntegrationIdentity, scope: IntegrationScope, res: ServerResponse): boolean {

@@ -1,0 +1,67 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "pugoti tarefas",
+      "intents": [
+        {
+          "name": "TodayTasksIntent",
+          "samples": [
+            "minhas tarefas de hoje",
+            "quais são as tarefas de hoje",
+            "o que eu tenho para hoje",
+            "ler meu dia"
+          ]
+        },
+        {
+          "name": "PendingTasksIntent",
+          "samples": [
+            "minhas tarefas pendentes",
+            "quais tarefas estão pendentes",
+            "ler tarefas pendentes"
+          ]
+        },
+        {
+          "name": "OverdueTasksIntent",
+          "samples": [
+            "minhas tarefas atrasadas",
+            "quais tarefas estão atrasadas",
+            "ler tarefas atrasadas"
+          ]
+        },
+        {
+          "name": "AddTaskIntent",
+          "slots": [{ "name": "taskTitle", "type": "AMAZON.SearchQuery" }],
+          "samples": [
+            "adicionar {taskTitle}",
+            "criar a tarefa {taskTitle}",
+            "anotar {taskTitle}"
+          ]
+        },
+        {
+          "name": "AddTodayTaskIntent",
+          "slots": [{ "name": "taskTitle", "type": "AMAZON.SearchQuery" }],
+          "samples": [
+            "adicionar para hoje {taskTitle}",
+            "criar para hoje {taskTitle}",
+            "colocar no meu dia {taskTitle}"
+          ]
+        },
+        {
+          "name": "CompleteTaskIntent",
+          "slots": [{ "name": "taskTitle", "type": "AMAZON.SearchQuery" }],
+          "samples": [
+            "concluir {taskTitle}",
+            "marcar {taskTitle} como concluída",
+            "finalizar {taskTitle}"
+          ]
+        },
+        { "name": "AMAZON.CancelIntent", "samples": [] },
+        { "name": "AMAZON.HelpIntent", "samples": [] },
+        { "name": "AMAZON.StopIntent", "samples": [] },
+        { "name": "AMAZON.FallbackIntent", "samples": [] },
+        { "name": "AMAZON.NavigateHomeIntent", "samples": [] }
+      ],
+      "types": []
+    }
+  }
+}

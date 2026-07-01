@@ -10,5 +10,6 @@ export const config = {
   pugotilabProfileUrl: process.env.PUGOTILAB_PROFILE_URL ?? "http://pugotilab-auth:8080/auth/api/profile",
   pugotilabLoginUrl: process.env.PUGOTILAB_LOGIN_URL ?? "https://pugotilab.com/auth/login",
   pugotilabOrigin: process.env.PUGOTILAB_ORIGIN ?? "http://pugotilab-auth:8080",
+  pugotilabAuthSecret: process.env.PUGOTILAB_AUTH_SECRET ?? "",
   sessionSecret: process.env.SESSION_SECRET ?? "pugotitasks-dev-secret-change-in-production"
 };

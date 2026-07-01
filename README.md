@@ -30,3 +30,5 @@ docker compose up -d --build
 
 A API externa usa Bearer Tokens revogáveis e nunca expõe notas ou o cofre. Consulte
 [`docs/integration-api.md`](docs/integration-api.md) para criar um token e usar os endpoints.
+
+A integração por voz está documentada em [`docs/alexa-skill.md`](docs/alexa-skill.md).
