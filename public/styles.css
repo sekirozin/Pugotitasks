@@ -343,7 +343,7 @@ button { cursor: pointer; }
 .flags-empty { grid-column: 1 / -1; }
 .field { display: grid; gap: 6px; margin-bottom: 18px; }
 .field > span { font-size: .82rem; color: var(--muted); font-weight: 600; }
-.field input, .field textarea {
+.field input, .field textarea, .field select {
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--surface);
@@ -352,7 +352,7 @@ button { cursor: pointer; }
   outline: 0;
 }
 .field textarea { resize: vertical; min-height: 76px; font-family: inherit; }
-.field input:focus, .field textarea:focus { border-color: var(--brand); }
+.field input:focus, .field textarea:focus, .field select:focus { border-color: var(--brand); }
 .flag-selector { display: flex; flex-wrap: wrap; gap: 6px; }
 .flag-chip.selected { border-color: var(--flag, var(--text)); background: var(--brand-soft); }
 .icon-picker {
@@ -406,8 +406,13 @@ button { cursor: pointer; }
   gap: 10px;
   padding: 8px 0 0;
   border-top: 1px solid var(--line);
+  flex-wrap: wrap;
+  align-items: end;
 }
-.due-picker input {
+.due-picker input,
+.due-picker select,
+.recurrence-fields input,
+.recurrence-fields select {
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--surface);
@@ -419,6 +424,35 @@ button { cursor: pointer; }
 .due-picker input:focus {
   border-color: var(--brand);
 }
+.due-date-field,
+.recurrence-fields label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: .78rem;
+  font-weight: 650;
+}
+.due-date-field { flex: 1 1 210px; }
+.recurrence-fields {
+  display: flex;
+  flex: 2 1 480px;
+  align-items: end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.recurrence-fields label { flex: 1 1 145px; }
+.recurrence-fields [hidden] { display: none !important; }
+.interval-input { display: flex; align-items: center; gap: 7px; }
+.interval-input input { width: 78px; }
+.interval-input small,
+.recurrence-fields label > span small { color: var(--muted); font-weight: 400; }
+.modal .recurrence-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 18px;
+}
+.task-recurrence { color: var(--brand); }
+.task-recurrence .icon { width: 15px; height: 15px; }
 .task-list { display: grid; gap: 8px; margin-top: 22px; }
 .task-card {
   display: grid;
@@ -803,6 +837,10 @@ button { cursor: pointer; }
     gap: 8px;
     margin-top: 2px;
   }
+  .due-picker { align-items: stretch; }
+  .recurrence-fields,
+  .modal .recurrence-fields { display: grid; grid-template-columns: 1fr; flex-basis: 100%; }
+  .due-date-field { flex-basis: 100%; }
   .flags-page-toolbar { align-items: stretch; flex-direction: column; }
   .flags-page-toolbar .primary-button { width: 100%; }
   .flags-grid { grid-template-columns: 1fr; }

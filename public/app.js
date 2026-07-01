@@ -1,5 +1,5 @@
 const app = document.querySelector("#app");
-const icon = (name, className = "icon") => `<svg class="${className}" aria-hidden="true"><use href="/phosphor-sprite.svg?v=flags-area-20260629#ph-${name}"></use></svg>`;
+const icon = (name, className = "icon") => `<svg class="${className}" aria-hidden="true"><use href="/phosphor-sprite.svg?v=task-recurrence-20260701#ph-${name}"></use></svg>`;
 const state = {
   profile: null,
   folders: [],
@@ -83,6 +83,52 @@ function isTaskOverdue(task) {
   const due = taskDateKey(task);
   return Boolean(!task.completed && due && due < todayKey());
 }
+function isTaskRecurring(task) {
+  return task.recurrenceType && task.recurrenceType !== "none";
+}
+function recurrenceLabel(task) {
+  if (task.recurrenceType === "daily") return "Diariamente";
+  if (task.recurrenceType === "weekly") return "Semanalmente";
+  if (task.recurrenceType === "custom") return `A cada ${task.recurrenceInterval || 1} dia(s)`;
+  return "";
+}
+function renderRecurrenceFields(task = {}) {
+  const type = task.recurrenceType || "none";
+  const interval = task.recurrenceInterval || 1;
+  const endAt = task.recurrenceEndAt?.slice(0, 10) || "";
+  return `
+    <div class="recurrence-fields" data-recurrence-group>
+      <label><span>Repetição</span><select name="recurrenceType" data-recurrence-type>
+        <option value="none" ${type === "none" ? "selected" : ""}>Não repetir</option>
+        <option value="daily" ${type === "daily" ? "selected" : ""}>Diariamente</option>
+        <option value="weekly" ${type === "weekly" ? "selected" : ""}>Semanalmente</option>
+        <option value="custom" ${type === "custom" ? "selected" : ""}>Período personalizado</option>
+      </select></label>
+      <label data-custom-interval><span>Repetir a cada</span><span class="interval-input"><input name="recurrenceInterval" type="number" min="1" max="365" value="${escapeHtml(interval)}"><small>dias</small></span></label>
+      <label data-recurrence-end><span>Repetir até <small>(opcional)</small></span><input name="recurrenceEndAt" type="date" value="${escapeHtml(endAt)}"></label>
+    </div>`;
+}
+function syncRecurrenceControls() {
+  document.querySelectorAll("[data-recurrence-group]").forEach((group) => {
+    const select = group.querySelector("[data-recurrence-type]");
+    const custom = group.querySelector("[data-custom-interval]");
+    const end = group.querySelector("[data-recurrence-end]");
+    const interval = group.querySelector("[name='recurrenceInterval']");
+    const endInput = group.querySelector("[name='recurrenceEndAt']");
+    const form = group.closest("form");
+    const due = form?.querySelector("[name='dueAt']");
+    const recurring = select?.value !== "none";
+    const customPeriod = select?.value === "custom";
+    custom?.toggleAttribute("hidden", !customPeriod);
+    end?.toggleAttribute("hidden", !recurring);
+    if (interval) { interval.disabled = !customPeriod; interval.required = customPeriod; }
+    if (endInput) {
+      endInput.disabled = !recurring;
+      endInput.min = due?.value?.slice(0, 10) || "";
+    }
+    if (due) due.required = recurring;
+  });
+}
 function taskCount(predicate) {
   return state.tasks.filter(predicate).length;
 }
@@ -99,21 +145,21 @@ function visibleTasks() {
   const search = state.search.trim().toLowerCase();
   return state.tasks.filter((task) => {
     if (search && !`${task.title} ${task.notes}`.toLowerCase().includes(search)) return false;
-    if (state.activeFolderId) return task.folderId === state.activeFolderId;
-    if (state.activeFlagId) return task.flagId === state.activeFlagId;
+    if (state.activeFolderId) return task.folderId === state.activeFolderId && !isTaskOverdue(task);
+    if (state.activeFlagId) return task.flagId === state.activeFlagId && !isTaskOverdue(task);
     if (state.view === "today") return !task.completed && taskDateKey(task) === todayKey();
     if (state.view === "overdue") return isTaskOverdue(task);
-    if (state.view === "important") return !task.completed && task.important;
+    if (state.view === "important") return !task.completed && !isTaskOverdue(task) && task.important;
     if (state.view === "completed") return task.completed;
-    return true;
+    return !isTaskOverdue(task);
   }).sort((a, b) => Number(a.completed) - Number(b.completed) || Number(isTaskOverdue(b)) - Number(isTaskOverdue(a)) || a.position - b.position);
 }
 function renderSidebar() {
   const nav = [
     ["today", "sun", "Meu dia", taskCount((t) => !t.completed && taskDateKey(t) === todayKey())],
     ["overdue", "warning-circle", "Atrasadas", taskCount(isTaskOverdue)],
-    ["important", "star", "Importantes", taskCount((t) => !t.completed && t.important)],
-    ["all", "list", "Todas", taskCount((t) => !t.completed)],
+    ["important", "star", "Importantes", taskCount((t) => !t.completed && !isTaskOverdue(t) && t.important)],
+    ["all", "list", "Todas", taskCount((t) => !t.completed && !isTaskOverdue(t))],
     ["completed", "seal-check", "Concluídas", taskCount((t) => t.completed)]
   ];
   return `
@@ -133,7 +179,7 @@ function renderSidebar() {
             <button type="button" class="nav-item ${state.activeFolderId === folder.id ? "active" : ""}" data-folder="${folder.id}">
               <span class="nav-glyph" style="color:${escapeHtml(folder.color || "#64748b")}">${icon(safeFolderIcon(folder.icon))}</span>
               <span class="nav-label">${escapeHtml(folder.name)}</span>
-              <span class="count">${taskCount((task) => !task.completed && task.folderId === folder.id)}</span>
+              <span class="count">${taskCount((task) => !task.completed && !isTaskOverdue(task) && task.folderId === folder.id)}</span>
             </button>
             <button type="button" class="icon-button folder-actions" data-folder-menu="${folder.id}" title="Editar pasta">${icon("dots-three-vertical")}</button>
           </div>
@@ -209,6 +255,7 @@ function renderTasks() {
           <div class="task-meta">
             ${folder ? `<span style="color:${escapeHtml(folder.color || "#64748b")}">${icon(safeFolderIcon(folder.icon))} ${escapeHtml(folder.name)}</span>` : ""}
             ${due ? `<span class="${overdue ? "task-overdue-label" : ""}">${overdue ? `${icon("warning-circle")} Atrasada: ` : ""}${due}</span>` : ""}
+            ${isTaskRecurring(task) ? `<span class="task-recurrence">${icon("arrows-clockwise")} ${escapeHtml(recurrenceLabel(task))}</span>` : ""}
             ${flag ? `<button type="button" class="task-flag" style="--flag:${flag.color}" data-task-flag="${flag.id}"><span class="flag-dot"></span>${escapeHtml(flag.name)}</button>` : ""}
           </div>
         </div>
@@ -313,7 +360,7 @@ function renderModal() {
   if (state.modal.type === "task") {
     const task = state.tasks.find((item) => item.id === state.modal.id);
     if (!task) return "";
-    return `<div class="modal-backdrop"><form class="modal" id="task-edit-form"><h2>Editar tarefa</h2><div class="field"><span>Título</span><input name="title" maxlength="180" value="${escapeHtml(task.title)}" required autofocus></div><div class="field"><span>Notas</span><textarea name="notes" maxlength="4000" rows="3">${escapeHtml(task.notes)}</textarea></div><div class="field"><span>Vencimento</span><input name="dueAt" type="datetime-local" value="${task.dueAt ? (task.dueAt.includes("T") ? task.dueAt.slice(0, 16) : task.dueAt.slice(0, 10) + "T00:00") : ""}"></div><div class="field"><span>Flag</span><div class="flag-selector"><input type="hidden" name="flagId" value="${task.flagId || ""}"><button type="button" class="flag-chip${!task.flagId ? " selected" : ""}" data-flag-select=""><span class="flag-dot"></span>Sem flag</button>${state.flags.map((flag) => `<button type="button" class="flag-chip${task.flagId === flag.id ? " selected" : ""}" data-flag-select="${flag.id}" style="--flag:${flag.color}"><span class="flag-dot"></span>${escapeHtml(flag.name)}</button>`).join("")}</div></div><div class="modal-actions"><button type="button" class="danger-button" data-delete-task="${task.id}">Excluir tarefa</button><button type="button" class="secondary-button" data-close-modal>Cancelar</button><button type="submit" class="primary-button">Salvar</button></div></form></div>`;
+    return `<div class="modal-backdrop"><form class="modal" id="task-edit-form"><h2>Editar tarefa</h2><div class="field"><span>Título</span><input name="title" maxlength="180" value="${escapeHtml(task.title)}" required autofocus></div><div class="field"><span>Notas</span><textarea name="notes" maxlength="4000" rows="3">${escapeHtml(task.notes)}</textarea></div><div class="field"><span>Vencimento</span><input name="dueAt" type="datetime-local" value="${task.dueAt ? (task.dueAt.includes("T") ? task.dueAt.slice(0, 16) : task.dueAt.slice(0, 10) + "T00:00") : ""}"></div>${renderRecurrenceFields(task)}<div class="field"><span>Flag</span><div class="flag-selector"><input type="hidden" name="flagId" value="${task.flagId || ""}"><button type="button" class="flag-chip${!task.flagId ? " selected" : ""}" data-flag-select=""><span class="flag-dot"></span>Sem flag</button>${state.flags.map((flag) => `<button type="button" class="flag-chip${task.flagId === flag.id ? " selected" : ""}" data-flag-select="${flag.id}" style="--flag:${flag.color}"><span class="flag-dot"></span>${escapeHtml(flag.name)}</button>`).join("")}</div></div><div class="modal-actions"><button type="button" class="danger-button" data-delete-task="${task.id}">Excluir tarefa</button><button type="button" class="secondary-button" data-close-modal>Cancelar</button><button type="submit" class="primary-button">Salvar</button></div></form></div>`;
   }
   if (state.modal.type === "flag-edit") {
     const flag = state.flags.find((item) => item.id === state.modal.id);
@@ -354,7 +401,7 @@ function render() {
           <button type="button" class="primary-button note-add-btn" id="note-add-btn">${icon("plus")} Adicionar nota</button>
           <section class="note-grid">${renderNotes()}</section>
           ` : `
-          <form class="task-composer" id="task-form"><input name="title" maxlength="180" placeholder="Adicionar uma tarefa" autocomplete="off" required><button type="button" class="icon-button" id="due-picker-toggle" title="Data de vencimento">${icon("calendar")}</button><button type="submit" class="primary-button">${icon("plus")} Adicionar</button>${state.duePickerOpen ? '<div class="due-picker"><input type="datetime-local" name="dueAt" id="due-input"><button type="button" class="secondary-button" id="due-clear">Limpar</button></div>' : ""}</form>
+          <form class="task-composer" id="task-form"><input name="title" maxlength="180" placeholder="Adicionar uma tarefa" autocomplete="off" required><button type="button" class="icon-button" id="due-picker-toggle" title="Data e repetição">${icon("calendar")}</button><button type="submit" class="primary-button">${icon("plus")} Adicionar</button>${state.duePickerOpen ? `<div class="due-picker"><label class="due-date-field"><span>Vencimento</span><input type="datetime-local" name="dueAt" id="due-input"></label>${renderRecurrenceFields()}<button type="button" class="secondary-button" id="due-clear">Limpar</button></div>` : ""}</form>
           <section class="task-list">${renderTasks()}</section>
           `}
         </main>
@@ -379,8 +426,8 @@ async function reload() {
   render();
 }
 async function patchTask(id, changes) {
-  const { task } = await api(`/api/tasks/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(changes) });
-  state.tasks = state.tasks.map((item) => item.id === id ? task : item);
+  const { task, tasks } = await api(`/api/tasks/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(changes) });
+  state.tasks = tasks || state.tasks.map((item) => item.id === id ? task : item);
   if (task.completed && state.draggingTaskId === id) state.draggingTaskId = null;
   render();
 }
@@ -446,6 +493,9 @@ async function touchVault() {
 }
 
 function bindEvents() {
+  syncRecurrenceControls();
+  document.querySelectorAll("[data-recurrence-type]").forEach((element) => element.addEventListener("change", syncRecurrenceControls));
+  document.querySelectorAll("[name='dueAt']").forEach((element) => element.addEventListener("change", syncRecurrenceControls));
   document.querySelector("#sidebar-toggle")?.addEventListener("click", () => {
     state.sidebarExpanded = !state.sidebarExpanded;
     render();
@@ -580,9 +630,14 @@ function bindEvents() {
     const data = new FormData(event.currentTarget);
     const folderId = state.activeFolderId || state.folders[0]?.id;
     if (!folderId) return;
-    const dueInput = document.querySelector("#due-input");
-    const dueValue = dueInput?.value || null;
-    const { task } = await api("/api/tasks", { method: "POST", body: JSON.stringify({ title: data.get("title"), folderId, flagId: state.activeFlagId, dueAt: dueValue, important: state.view === "important" }) });
+    const dueValue = data.get("dueAt") || null;
+    const recurrenceType = data.get("recurrenceType") || "none";
+    const { task } = await api("/api/tasks", { method: "POST", body: JSON.stringify({
+      title: data.get("title"), folderId, flagId: state.activeFlagId, dueAt: dueValue,
+      important: state.view === "important", recurrenceType,
+      recurrenceInterval: recurrenceType === "custom" ? Number(data.get("recurrenceInterval")) : 1,
+      recurrenceEndAt: data.get("recurrenceEndAt") || null
+    }) });
     state.tasks.unshift(task); state.duePickerOpen = false; render();
   });
   document.querySelector("#folder-form")?.addEventListener("submit", async (event) => {
@@ -708,6 +763,10 @@ function bindEvents() {
     const task = state.tasks.find((item) => item.id === element.dataset.myDay);
     if (!task) return;
     const isMyDay = task.dueAt?.slice(0, 10) === todayKey();
+    if (isMyDay && isTaskRecurring(task)) {
+      setToast("Uma tarefa recorrente precisa manter uma data de vencimento.");
+      return;
+    }
     await patchTask(task.id, { dueAt: isMyDay ? null : todayKey() });
   }));
   document.querySelector("[data-delete-task]")?.addEventListener("click", async (event) => {
@@ -744,7 +803,10 @@ function bindEvents() {
       title: data.get("title"),
       notes: data.get("notes"),
       dueAt: data.get("dueAt") || null,
-      flagId: data.get("flagId") || null
+      flagId: data.get("flagId") || null,
+      recurrenceType: data.get("recurrenceType") || "none",
+      recurrenceInterval: data.get("recurrenceType") === "custom" ? Number(data.get("recurrenceInterval")) : 1,
+      recurrenceEndAt: data.get("recurrenceEndAt") || null
     });
   });
   document.querySelectorAll("[data-delete-flag]").forEach((element) => element.addEventListener("click", async (event) => {

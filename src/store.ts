@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { config } from "./config.js";
+import { getNextRecurrenceDueAt, normalizeRecurrenceInterval, normalizeRecurrenceType } from "./recurrence.js";
 import type { Flag, Folder, Note, NoteFolder, Task, VaultSettings } from "./types.js";
 const allowedColors = new Set([
   "#22c55e", "#ef4444", "#3b82f6", "#f59e0b",
@@ -46,7 +47,12 @@ export class Store {
         position INTEGER NOT NULL DEFAULT 0,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL,
-        completedAt TEXT
+        completedAt TEXT,
+        recurrenceType TEXT NOT NULL DEFAULT 'none',
+        recurrenceInterval INTEGER NOT NULL DEFAULT 1,
+        recurrenceEndAt TEXT,
+        recurrenceSeriesId TEXT,
+        recurrenceParentId TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_folders_user ON folders(userId, position);
       CREATE INDEX IF NOT EXISTS idx_flags_user ON flags(userId, createdAt);
@@ -102,6 +108,23 @@ export class Store {
     if (!cols.some((c) => c.name === "locked")) {
       this.db.exec("ALTER TABLE note_folders ADD COLUMN locked INTEGER NOT NULL DEFAULT 0");
     }
+    cols = this.db.prepare("PRAGMA table_info(tasks)").all() as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === "recurrenceType")) {
+      this.db.exec("ALTER TABLE tasks ADD COLUMN recurrenceType TEXT NOT NULL DEFAULT 'none'");
+    }
+    if (!cols.some((c) => c.name === "recurrenceInterval")) {
+      this.db.exec("ALTER TABLE tasks ADD COLUMN recurrenceInterval INTEGER NOT NULL DEFAULT 1");
+    }
+    if (!cols.some((c) => c.name === "recurrenceEndAt")) {
+      this.db.exec("ALTER TABLE tasks ADD COLUMN recurrenceEndAt TEXT");
+    }
+    if (!cols.some((c) => c.name === "recurrenceSeriesId")) {
+      this.db.exec("ALTER TABLE tasks ADD COLUMN recurrenceSeriesId TEXT");
+    }
+    if (!cols.some((c) => c.name === "recurrenceParentId")) {
+      this.db.exec("ALTER TABLE tasks ADD COLUMN recurrenceParentId TEXT");
+    }
+    this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_recurrence_parent ON tasks(recurrenceParentId) WHERE recurrenceParentId IS NOT NULL");
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS server_settings (
         key TEXT PRIMARY KEY,
@@ -204,7 +227,16 @@ export class Store {
       SELECT * FROM tasks WHERE userId = ?
       ORDER BY completed, position, createdAt DESC
     `).all(userId) as Array<Omit<Task, "completed" | "important"> & { completed: number; important: number }>;
-    return rows.map((row) => ({ ...row, completed: Boolean(row.completed), important: Boolean(row.important) }));
+    return rows.map((row) => ({
+      ...row,
+      completed: Boolean(row.completed),
+      important: Boolean(row.important),
+      recurrenceType: normalizeRecurrenceType(row.recurrenceType),
+      recurrenceInterval: Number(row.recurrenceInterval || 1),
+      recurrenceEndAt: row.recurrenceEndAt || null,
+      recurrenceSeriesId: row.recurrenceSeriesId || null,
+      recurrenceParentId: row.recurrenceParentId || null
+    }));
   }
   createTask(userId: string, input: Partial<Task>): Task {
     const title = String(input.title ?? "").trim().slice(0, 180);
@@ -215,49 +247,100 @@ export class Store {
     }
     const flagId = input.flagId && this.db.prepare("SELECT 1 FROM flags WHERE id = ? AND userId = ?").get(input.flagId, userId)
       ? input.flagId : null;
+    const dueAt = input.dueAt ? String(input.dueAt).slice(0, 16) : null;
+    const recurrenceType = normalizeRecurrenceType(input.recurrenceType);
+    const recurrenceInterval = normalizeRecurrenceInterval(recurrenceType, input.recurrenceInterval);
+    const recurrenceEndAt = recurrenceType !== "none" && input.recurrenceEndAt
+      ? String(input.recurrenceEndAt).slice(0, 10) : null;
+    if (recurrenceType !== "none" && !dueAt) throw new Error("Defina o vencimento da tarefa recorrente.");
+    if (recurrenceEndAt && recurrenceEndAt < dueAt!.slice(0, 10)) {
+      throw new Error("A data final da recorrência deve ser posterior ao primeiro vencimento.");
+    }
     const now = new Date().toISOString();
+    const id = crypto.randomUUID();
     const position = (this.db.prepare("SELECT COALESCE(MIN(position), 0) - 1 value FROM tasks WHERE userId = ? AND completed = 0").get(userId) as { value: number }).value;
     const task: Task = {
-      id: crypto.randomUUID(), userId, folderId, flagId,
+      id, userId, folderId, flagId,
       title, notes: String(input.notes ?? "").trim().slice(0, 4000),
-      dueAt: input.dueAt || null, completed: false, important: Boolean(input.important),
-      position, createdAt: now, updatedAt: now, completedAt: null
+      dueAt, completed: false, important: Boolean(input.important),
+      position, createdAt: now, updatedAt: now, completedAt: null,
+      recurrenceType, recurrenceInterval, recurrenceEndAt,
+      recurrenceSeriesId: recurrenceType === "none" ? null : id,
+      recurrenceParentId: null
     };
     this.db.prepare(`
-      INSERT INTO tasks (id, userId, folderId, flagId, title, notes, dueAt, completed, important, position, createdAt, updatedAt, completedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, NULL)
-    `).run(task.id, userId, folderId, flagId, task.title, task.notes, task.dueAt, task.important ? 1 : 0, position, now, now);
+      INSERT INTO tasks (id, userId, folderId, flagId, title, notes, dueAt, completed, important, position,
+        createdAt, updatedAt, completedAt, recurrenceType, recurrenceInterval, recurrenceEndAt, recurrenceSeriesId, recurrenceParentId)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL)
+    `).run(task.id, userId, folderId, flagId, task.title, task.notes, task.dueAt, task.important ? 1 : 0,
+      position, now, now, recurrenceType, recurrenceInterval, recurrenceEndAt, task.recurrenceSeriesId);
     return task;
   }
   updateTask(userId: string, id: string, input: Partial<Task>): Task | null {
-    const current = this.db.prepare("SELECT * FROM tasks WHERE id = ? AND userId = ?").get(id, userId) as Record<string, unknown> | undefined;
-    if (!current) return null;
-    const folderId = input.folderId === undefined ? String(current.folderId) : String(input.folderId);
-    if (!this.db.prepare("SELECT 1 FROM folders WHERE id = ? AND userId = ?").get(folderId, userId)) {
-      throw new Error("Pasta inválida.");
-    }
-    const completed = input.completed === undefined ? Boolean(current.completed) : Boolean(input.completed);
-    const flagId = input.flagId === undefined
-      ? current.flagId as string | null
-      : input.flagId && this.db.prepare("SELECT 1 FROM flags WHERE id = ? AND userId = ?").get(input.flagId, userId)
-        ? input.flagId : null;
-    const title = input.title === undefined ? String(current.title) : String(input.title).trim().slice(0, 180);
-    if (!title) throw new Error("Informe o título da tarefa.");
-    const now = new Date().toISOString();
-    const completedAt = completed ? String(current.completedAt || now) : null;
-    this.db.prepare(`
-      UPDATE tasks SET folderId = ?, flagId = ?, title = ?, notes = ?, dueAt = ?,
-        completed = ?, important = ?, updatedAt = ?, completedAt = ?
-      WHERE id = ? AND userId = ?
-    `).run(
-      folderId, flagId, title,
-      input.notes === undefined ? current.notes : String(input.notes).trim().slice(0, 4000),
-      input.dueAt === undefined ? current.dueAt : input.dueAt || null,
-      completed ? 1 : 0,
-      input.important === undefined ? current.important : input.important ? 1 : 0,
-      now, completedAt, id, userId
-    );
-    return this.listTasks(userId).find((task) => task.id === id) ?? null;
+    return this.db.transaction(() => {
+      const raw = this.db.prepare("SELECT * FROM tasks WHERE id = ? AND userId = ?").get(id, userId) as Record<string, unknown> | undefined;
+      if (!raw) return null;
+      const current = this.listTasks(userId).find((task) => task.id === id)!;
+      const folderId = input.folderId === undefined ? current.folderId : String(input.folderId);
+      if (!this.db.prepare("SELECT 1 FROM folders WHERE id = ? AND userId = ?").get(folderId, userId)) {
+        throw new Error("Pasta inválida.");
+      }
+      const completed = input.completed === undefined ? current.completed : Boolean(input.completed);
+      const flagId = input.flagId === undefined
+        ? current.flagId
+        : input.flagId && this.db.prepare("SELECT 1 FROM flags WHERE id = ? AND userId = ?").get(input.flagId, userId)
+          ? input.flagId : null;
+      const title = input.title === undefined ? current.title : String(input.title).trim().slice(0, 180);
+      if (!title) throw new Error("Informe o título da tarefa.");
+      const dueAt = input.dueAt === undefined ? current.dueAt : input.dueAt ? String(input.dueAt).slice(0, 16) : null;
+      const recurrenceType = input.recurrenceType === undefined
+        ? current.recurrenceType : normalizeRecurrenceType(input.recurrenceType);
+      const recurrenceInterval = normalizeRecurrenceInterval(
+        recurrenceType,
+        input.recurrenceInterval === undefined ? current.recurrenceInterval : input.recurrenceInterval
+      );
+      const recurrenceEndAt = recurrenceType === "none" ? null : input.recurrenceEndAt === undefined
+        ? current.recurrenceEndAt : input.recurrenceEndAt ? String(input.recurrenceEndAt).slice(0, 10) : null;
+      if (recurrenceType !== "none" && !dueAt) throw new Error("Defina o vencimento da tarefa recorrente.");
+      if (recurrenceEndAt && recurrenceEndAt < dueAt!.slice(0, 10)) {
+        throw new Error("A data final da recorrência deve ser posterior ao vencimento.");
+      }
+
+      const now = new Date().toISOString();
+      const completedAt = completed ? current.completedAt || now : null;
+      const recurrenceSeriesId = recurrenceType === "none" ? null : current.recurrenceSeriesId || current.id;
+      this.db.prepare(`
+        UPDATE tasks SET folderId = ?, flagId = ?, title = ?, notes = ?, dueAt = ?,
+          completed = ?, important = ?, updatedAt = ?, completedAt = ?, recurrenceType = ?,
+          recurrenceInterval = ?, recurrenceEndAt = ?, recurrenceSeriesId = ?
+        WHERE id = ? AND userId = ?
+      `).run(
+        folderId, flagId, title,
+        input.notes === undefined ? current.notes : String(input.notes).trim().slice(0, 4000),
+        dueAt, completed ? 1 : 0,
+        input.important === undefined ? current.important ? 1 : 0 : input.important ? 1 : 0,
+        now, completedAt, recurrenceType, recurrenceInterval, recurrenceEndAt, recurrenceSeriesId, id, userId
+      );
+
+      const updated = this.listTasks(userId).find((task) => task.id === id)!;
+      if (!current.completed && completed && recurrenceType !== "none") {
+        const nextDueAt = getNextRecurrenceDueAt(updated, new Date(completedAt!));
+        const existing = this.db.prepare("SELECT 1 FROM tasks WHERE recurrenceParentId = ?").get(id);
+        if (nextDueAt && !existing) {
+          const nextId = crypto.randomUUID();
+          const position = (this.db.prepare("SELECT COALESCE(MIN(position), 0) - 1 value FROM tasks WHERE userId = ? AND completed = 0").get(userId) as { value: number }).value;
+          this.db.prepare(`
+            INSERT INTO tasks (id, userId, folderId, flagId, title, notes, dueAt, completed, important, position,
+              createdAt, updatedAt, completedAt, recurrenceType, recurrenceInterval, recurrenceEndAt,
+              recurrenceSeriesId, recurrenceParentId)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)
+          `).run(nextId, userId, folderId, flagId, title, updated.notes, nextDueAt,
+            updated.important ? 1 : 0, position, now, now, recurrenceType, recurrenceInterval,
+            recurrenceEndAt, recurrenceSeriesId, id);
+        }
+      }
+      return this.listTasks(userId).find((task) => task.id === id) ?? null;
+    })();
   }
   deleteTask(userId: string, id: string): boolean {
     return this.db.prepare("DELETE FROM tasks WHERE id = ? AND userId = ?").run(id, userId).changes > 0;

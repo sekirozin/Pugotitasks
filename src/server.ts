@@ -98,7 +98,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<voi
   if (taskId && req.method === "PATCH") {
     const body = await readJson<Partial<Task>>(req);
     const task = store.updateTask(profile.username, taskId, body);
-    sendJson(res, task ? 200 : 404, task ? { task } : { error: "Tarefa não encontrada." });
+    sendJson(res, task ? 200 : 404, task ? { task, tasks: store.listTasks(profile.username) } : { error: "Tarefa não encontrada." });
     return;
   }
   if (taskId && req.method === "DELETE") {

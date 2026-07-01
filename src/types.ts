@@ -27,6 +27,8 @@ export type Flag = {
   createdAt: string;
 };
 
+export type RecurrenceType = "none" | "daily" | "weekly" | "custom";
+
 export type Task = {
   id: string;
   userId: string;
@@ -41,6 +43,11 @@ export type Task = {
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+  recurrenceType: RecurrenceType;
+  recurrenceInterval: number;
+  recurrenceEndAt: string | null;
+  recurrenceSeriesId: string | null;
+  recurrenceParentId: string | null;
 };
 
 

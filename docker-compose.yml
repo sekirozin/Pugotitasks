@@ -9,6 +9,7 @@ services:
       DB_FILE: "/app/data/pugotitasks.db"
       PUGOTILAB_PROFILE_URL: "http://pugotilab-auth:8080/auth/api/profile"
       PUGOTILAB_LOGIN_URL: "https://pugotilab.com/auth"
+      TZ: "America/Maceio"
     volumes:
       - /DATA/AppData/pugotitasks/data:/app/data
       - /DATA/AppData/Pugotitasks/public:/app/public
