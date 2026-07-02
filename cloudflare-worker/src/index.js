@@ -1,3 +1,4 @@
+const authorizationEndpoint = "https://pugotilab.com/auth/oauth/authorize";
 const tokenEndpoint = "https://pugotilab.com/auth/oauth/token";
 
 export default {
@@ -6,6 +7,12 @@ export default {
 
     if (request.method === "GET" && url.pathname === "/health") {
       return Response.json({ status: "ok" });
+    }
+
+    if (request.method === "GET" && url.pathname === "/oauth/authorize") {
+      const destination = new URL(authorizationEndpoint);
+      destination.search = url.search;
+      return Response.redirect(destination, 302);
     }
 
     if (request.method !== "POST" || url.pathname !== "/oauth/token") {

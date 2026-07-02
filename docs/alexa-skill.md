@@ -3,7 +3,7 @@
 ## Serviços
 
 - API de tarefas: `https://task.pugotilab.com/api/integrations/v1`
-- OAuth Authorization URI: `https://pugotilab.com/auth/oauth/authorize`
+- OAuth Authorization URI: URL `workers.dev` publicada por `cloudflare-worker/`, seguida por `/oauth/authorize`
 - OAuth Access Token URI: URL `workers.dev` publicada por `cloudflare-worker/`, seguida por `/oauth/token`
 - Endpoint da Skill sugerido: `https://alexa-task.pugotilab.com/alexa`
 - Porta local da Skill: `3011`
@@ -23,7 +23,7 @@ Configuração do Account Linking:
 
 | Campo | Valor |
 | --- | --- |
-| Authorization URI | `https://pugotilab.com/auth/oauth/authorize` |
+| Authorization URI | `https://pugotitasks-oauth.<conta>.workers.dev/oauth/authorize` |
 | Access Token URI | `https://pugotitasks-oauth.<conta>.workers.dev/oauth/token` |
 | Client ID | Valor de `ALEXA_OAUTH_CLIENT_ID` no PugotiProfile |
 | Client Secret | Valor de `ALEXA_OAUTH_CLIENT_SECRET` no PugotiProfile |

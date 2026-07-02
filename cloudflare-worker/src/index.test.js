@@ -13,6 +13,17 @@ test("rejeita rotas que não sejam o token OAuth", async () => {
   assert.equal(response.status, 404);
 });
 
+test("encaminha a autorização para a tela PugotiLab", async () => {
+  const response = await worker.fetch(new Request(
+    "https://worker.test/oauth/authorize?client_id=example&state=opaque"
+  ));
+  assert.equal(response.status, 302);
+  assert.equal(
+    response.headers.get("location"),
+    "https://pugotilab.com/auth/oauth/authorize?client_id=example&state=opaque"
+  );
+});
+
 test("encaminha o token OAuth sem remover autenticação ou corpo", async () => {
   const originalFetch = globalThis.fetch;
   let forwardedRequest;
