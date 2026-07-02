@@ -1,0 +1,7 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "pugotitasks-oauth",
+  "main": "src/index.js",
+  "compatibility_date": "2026-07-01",
+  "workers_dev": true
+}
